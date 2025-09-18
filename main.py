@@ -109,14 +109,43 @@ def sanitize_filename(name: str) -> str:
 
 
 async def download_youtube_as_mp3(query: str, out_dir: str) -> Optional[str]:
-	# Uses yt-dlp to search and extract bestaudio, convert to mp3
-	output_tpl = os.path.join(out_dir, "%(title)s.%(ext)s")
-	ydl_opts = {
+	# Strategy: search multiple candidates and try downloading them one by one
+	search_query = f"ytsearch10:{query}"
+	search_opts = {
+		"quiet": True,
+		"no_warnings": True,
+		"noplaylist": True,
+		"default_search": "ytsearch",
+		"extract_flat": True,
+		"retries": 3,
+		"socket_timeout": 15,
+	}
+	loop = asyncio.get_event_loop()
+
+	def get_candidates():
+		with yt_dlp.YoutubeDL(search_opts) as ydl:
+			info = ydl.extract_info(search_query, download=False)
+			entries = info.get("entries") or []
+			cands = []
+			for e in entries:
+				url = e.get("url") or e.get("webpage_url")
+				title = e.get("title")
+				if url:
+					cands.append((url, title))
+			return cands
+
+	candidates = await loop.run_in_executor(None, get_candidates)
+	if not candidates:
+		return None
+
+	base_opts = {
 		"format": "bestaudio/best",
-		"outtmpl": output_tpl,
+		"outtmpl": os.path.join(out_dir, "%(title)s.%(ext)s"),
 		"noplaylist": True,
 		"quiet": True,
 		"no_warnings": True,
+		"retries": 3,
+		"socket_timeout": 30,
 		"postprocessors": [
 			{
 				"key": "FFmpegExtractAudio",
@@ -127,25 +156,27 @@ async def download_youtube_as_mp3(query: str, out_dir: str) -> Optional[str]:
 				"key": "FFmpegMetadata",
 			},
 		],
-		"default_search": "ytsearch",
-		"max_downloads": 1,
 	}
-	loop = asyncio.get_event_loop()
 
-	def run_ydl():
-		with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-			info = ydl.extract_info(query, download=True)
-			if "entries" in info:
-				info = info["entries"][0]
-			# After postprocessing, extension is mp3 and output is at out_dir
-			title = info.get("title") or "audio"
-			# yt-dlp may sanitize title; find resulting file
-			for fn in os.listdir(out_dir):
-				if fn.lower().endswith(".mp3"):
-					return os.path.join(out_dir, fn)
+	def try_download(url: str) -> Optional[str]:
+		try:
+			with yt_dlp.YoutubeDL(base_opts) as ydl:
+				info = ydl.extract_info(url, download=True)
+				if "entries" in info:
+					info = info["entries"][0]
+				for fn in os.listdir(out_dir):
+					if fn.lower().endswith(".mp3"):
+						return os.path.join(out_dir, fn)
+				return None
+		except Exception:
 			return None
 
-	return await loop.run_in_executor(None, run_ydl)
+	for url, _ in candidates:
+		result = await loop.run_in_executor(None, try_download, url)
+		if result:
+			return result
+
+	return None
 
 
 async def send_typing(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int):
@@ -196,7 +227,7 @@ async def process_single_track(update: Update, context: ContextTypes.DEFAULT_TYP
 	with tempfile.TemporaryDirectory() as tmpdir:
 		file_path = await download_youtube_as_mp3(build_search_query(info), tmpdir)
 		if not file_path or not os.path.exists(file_path):
-			await update.message.reply_text(f"Не удалось скачать: {title}")
+			await update.message.reply_text(f"Не удалось скачать: {title}. Пробуйте другой трек или позже.")
 			return
 		# Rename to desired filename
 		desired_name = sanitize_filename(title) + ".mp3"
@@ -236,4 +267,3 @@ if __name__ == "__main__":
 		main()
 	except (KeyboardInterrupt, SystemExit):
 		pass
-	pass
