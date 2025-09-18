@@ -1,0 +1,6 @@
+python-telegram-bot==21.4
+yt-dlp==2024.8.6
+spotipy==2.24.0
+python-dotenv==1.0.1
+pydub==0.25.1
+requests==2.32.3
