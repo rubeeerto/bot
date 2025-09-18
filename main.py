@@ -114,10 +114,18 @@ def resolve_spotify_playlist(url: str, sp_client=None) -> List[TrackInfo]:
 	return items
 
 
-def build_search_query(info: TrackInfo) -> str:
-	# Prefer precise search terms
-	base = f"{info.title} {', '.join(info.artists)}" if info.artists else info.title
-	return f"{base} official audio"
+def build_search_queries(info: TrackInfo) -> list:
+	# Формируем несколько вариантов поискового запроса для повышения релевантности
+	base = f"{info.title} {' '.join(info.artists)}".strip()
+	queries = [
+		f"{base} official audio",
+		f"{base} lyrics",
+		f"{base} topic",
+		f"{base} audio",
+		f"{base} full song",
+		base
+	]
+	return queries
 
 
 def sanitize_filename(name: str) -> str:
@@ -206,127 +214,116 @@ def _score_candidate(track: TrackInfo, cand: Dict[str, Any]) -> float:
 
 
 async def download_audio_with_fallbacks(query: str, out_dir: str, track: Optional[TrackInfo] = None) -> Optional[str]:
-	# Try YouTube, then SoundCloud, then Bandcamp
+	# Если track передан, используем build_search_queries, иначе как раньше
 	loop = asyncio.get_event_loop()
+	search_queries = [query]
+	if track is not None:
+		search_queries = build_search_queries(track)
 
-	def list_candidates_yt() -> List[Dict[str, Any]]:
-		opts = {
+	for search_query in search_queries:
+		def list_candidates_yt() -> List[Dict[str, Any]]:
+			opts = {
+				"quiet": True,
+				"no_warnings": True,
+				"noplaylist": True,
+				"default_search": "ytsearch",
+				"extract_flat": True,
+				"http_headers": _common_http_headers(),
+				"extractor_args": {
+					"youtube": {
+						"player_client": ["android"],
+						"player_skip": ["configs", "webpage"],
+					}
+				},
+				"sleep_requests": 1.0,
+			}
+			search = f"ytsearch15:{search_query}"
+			with yt_dlp.YoutubeDL(opts) as ydl:
+				info = ydl.extract_info(search, download=False)
+				entries = info.get("entries") or []
+				cands: List[Dict[str, Any]] = []
+				for e in entries:
+					cands.append({
+						"url": e.get("url") or e.get("webpage_url"),
+						"title": e.get("title"),
+						"duration": e.get("duration"),
+						"uploader": e.get("uploader"),
+						"channel": e.get("channel") or e.get("channel_id"),
+					})
+				return [c for c in cands if c.get("url")]
+
+		def list_candidates_sc() -> List[Dict[str, Any]]:
+			opts = {
+				"quiet": True,
+				"no_warnings": True,
+				"noplaylist": True,
+				"extract_flat": True,
+				"http_headers": _common_http_headers(),
+				"sleep_requests": 1.0,
+			}
+			search = f"scsearch15:{search_query}"
+			with yt_dlp.YoutubeDL(opts) as ydl:
+				info = ydl.extract_info(search, download=False)
+				entries = info.get("entries") or []
+				cands: List[Dict[str, Any]] = []
+				for e in entries:
+					cands.append({
+						"url": e.get("url") or e.get("webpage_url"),
+						"title": e.get("title"),
+						"duration": e.get("duration"),
+						"uploader": e.get("uploader"),
+						"channel": e.get("channel") or e.get("channel_id"),
+					})
+				return [c for c in cands if c.get("url")]
+
+		def list_candidates_bc() -> List[Dict[str, Any]]:
+			urls = _search_bandcamp_candidates(search_query, limit=5)
+			return [{"url": u, "title": u} for u in urls]
+
+		base_opts = {
+			"format": "bestaudio/best",
+			"outtmpl": os.path.join(out_dir, "%(title)s.%(ext)s"),
+			"noplaylist": True,
 			"quiet": True,
 			"no_warnings": True,
-			"noplaylist": True,
-			"default_search": "ytsearch",
-			"extract_flat": True,
+			"retries": 3,
+			"socket_timeout": 30,
 			"http_headers": _common_http_headers(),
 			"extractor_args": {
 				"youtube": {
 					"player_client": ["android"],
 					"player_skip": ["configs", "webpage"],
+				},
+				"soundcloud": {
+					"client_id": [os.getenv("SOUNDCLOUD_CLIENT_ID")] if os.getenv("SOUNDCLOUD_CLIENT_ID") else None
 				}
 			},
 			"sleep_requests": 1.0,
+			"throttledratelimit": 1024 * 64,
+			"ratelimit": 1024 * 256,
+			"concurrent_fragment_downloads": 1,
+			"postprocessors": [
+				{
+					"key": "FFmpegExtractAudio",
+					"preferredcodec": "mp3",
+					"preferredquality": "192",
+				},
+				{
+					"key": "FFmpegMetadata",
+				},
+			],
 		}
-		search_query = f"ytsearch15:{query}"
-		with yt_dlp.YoutubeDL(opts) as ydl:
-			info = ydl.extract_info(search_query, download=False)
-			entries = info.get("entries") or []
-			cands: List[Dict[str, Any]] = []
-			for e in entries:
-				cands.append({
-					"url": e.get("url") or e.get("webpage_url"),
-					"title": e.get("title"),
-					"duration": e.get("duration"),
-					"uploader": e.get("uploader"),
-					"channel": e.get("channel") or e.get("channel_id"),
-				})
-			return [c for c in cands if c.get("url")]
+		proxy = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
+		if proxy:
+			base_opts["proxy"] = proxy
+		cookies_path = _write_cookies_from_env()
+		if cookies_path:
+			base_opts["cookiefile"] = cookies_path
 
-	def list_candidates_sc() -> List[Dict[str, Any]]:
-		opts = {
-			"quiet": True,
-			"no_warnings": True,
-			"noplaylist": True,
-			"extract_flat": True,
-			"http_headers": _common_http_headers(),
-			"sleep_requests": 1.0,
-		}
-		search_query = f"scsearch15:{query}"
-		with yt_dlp.YoutubeDL(opts) as ydl:
-			info = ydl.extract_info(search_query, download=False)
-			entries = info.get("entries") or []
-			cands: List[Dict[str, Any]] = []
-			for e in entries:
-				cands.append({
-					"url": e.get("url") or e.get("webpage_url"),
-					"title": e.get("title"),
-					"duration": e.get("duration"),
-					"uploader": e.get("uploader"),
-					"channel": e.get("channel") or e.get("channel_id"),
-				})
-			return [c for c in cands if c.get("url")]
-
-	def list_candidates_bc() -> List[Dict[str, Any]]:
-		urls = _search_bandcamp_candidates(query, limit=5)
-		return [{"url": u, "title": u} for u in urls]
-
-	base_opts = {
-		"format": "bestaudio/best",
-		"outtmpl": os.path.join(out_dir, "%(title)s.%(ext)s"),
-		"noplaylist": True,
-		"quiet": True,
-		"no_warnings": True,
-		"retries": 3,
-		"socket_timeout": 30,
-		"http_headers": _common_http_headers(),
-		"extractor_args": {
-			"youtube": {
-				"player_client": ["android"],
-				"player_skip": ["configs", "webpage"],
-			},
-			"soundcloud": {
-				"client_id": [os.getenv("SOUNDCLOUD_CLIENT_ID")] if os.getenv("SOUNDCLOUD_CLIENT_ID") else None
-			}
-		},
-		"sleep_requests": 1.0,
-		"throttledratelimit": 1024 * 64,
-		"ratelimit": 1024 * 256,
-		"concurrent_fragment_downloads": 1,
-		"postprocessors": [
-			{
-				"key": "FFmpegExtractAudio",
-				"preferredcodec": "mp3",
-				"preferredquality": "192",
-			},
-			{
-				"key": "FFmpegMetadata",
-			},
-		],
-	}
-	proxy = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
-	if proxy:
-		base_opts["proxy"] = proxy
-	cookies_path = _write_cookies_from_env()
-	if cookies_path:
-		base_opts["cookiefile"] = cookies_path
-
-	def try_download(url: str) -> Optional[str]:
-		# 1. yt-dlp
-		try:
-			with yt_dlp.YoutubeDL(base_opts) as ydl:
-				info = ydl.extract_info(url, download=True)
-				if "entries" in info:
-					info = info["entries"][0]
-				for fn in os.listdir(out_dir):
-					if fn.lower().endswith(".mp3"):
-						return os.path.join(out_dir, fn)
-				return None
-		except Exception as e:
-			print(f"yt-dlp failed: {e}")
-		# 2. youtube-dl fallback
-		if youtube_dl is not None:
+		def try_download(url: str) -> Optional[str]:
+			# 1. yt-dlp
 			try:
-				ydl_opts = base_opts.copy()
-				ydl_opts.pop("extractor_args", None)  # youtube-dl не поддерживает extractor_args
-				with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+				with yt_dlp.YoutubeDL(base_opts) as ydl:
 					info = ydl.extract_info(url, download=True)
 					if "entries" in info:
 						info = info["entries"][0]
@@ -335,47 +332,62 @@ async def download_audio_with_fallbacks(query: str, out_dir: str, track: Optiona
 							return os.path.join(out_dir, fn)
 					return None
 			except Exception as e:
-				print(f"youtube-dl failed: {e}")
-		# 3. pytube fallback (только для YouTube)
-		if YouTube is not None and ("youtube.com" in url or "youtu.be" in url):
-			try:
-				yt = YouTube(url)
-				stream = yt.streams.filter(only_audio=True).first()
-				if stream:
-					out_file = stream.download(output_path=out_dir)
-					# Преобразуем в mp3, если нужно
-					if not out_file.lower().endswith(".mp3"):
-						import subprocess
-						mp3_path = os.path.splitext(out_file)[0] + ".mp3"
-						subprocess.run([
-							"ffmpeg", "-y", "-i", out_file, mp3_path
-						], check=True)
-						os.remove(out_file)
-						return mp3_path
-					return out_file
-				return None
-			except Exception as e:
-				print(f"pytube failed: {e}")
-		return None
+				print(f"yt-dlp failed: {e}")
+			# 2. youtube-dl fallback
+			if youtube_dl is not None:
+				try:
+					ydl_opts = base_opts.copy()
+					ydl_opts.pop("extractor_args", None)  # youtube-dl не поддерживает extractor_args
+					with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+						info = ydl.extract_info(url, download=True)
+						if "entries" in info:
+							info = info["entries"][0]
+						for fn in os.listdir(out_dir):
+							if fn.lower().endswith(".mp3"):
+								return os.path.join(out_dir, fn)
+						return None
+				except Exception as e:
+					print(f"youtube-dl failed: {e}")
+			# 3. pytube fallback (только для YouTube)
+			if YouTube is not None and ("youtube.com" in url or "youtu.be" in url):
+				try:
+					yt = YouTube(url)
+					stream = yt.streams.filter(only_audio=True).first()
+					if stream:
+						out_file = stream.download(output_path=out_dir)
+						# Преобразуем в mp3, если нужно
+						if not out_file.lower().endswith(".mp3"):
+							import subprocess
+							mp3_path = os.path.splitext(out_file)[0] + ".mp3"
+							subprocess.run([
+								"ffmpeg", "-y", "-i", out_file, mp3_path
+							], check=True)
+							os.remove(out_file)
+							return mp3_path
+						return out_file
+					return None
+				except Exception as e:
+					print(f"pytube failed: {e}")
+			return None
 
-	# Aggregate and rank candidates
-	yt_candidates = await loop.run_in_executor(None, list_candidates_yt)
-	sc_candidates = await loop.run_in_executor(None, list_candidates_sc)
-	bc_candidates = await loop.run_in_executor(None, list_candidates_bc)
-	all_candidates: List[Dict[str, Any]] = []
-	all_candidates.extend(yt_candidates)
-	all_candidates.extend(sc_candidates)
-	all_candidates.extend(bc_candidates)
-	if not all_candidates:
-		return None
+		# Aggregate and rank candidates
+		yt_candidates = await loop.run_in_executor(None, list_candidates_yt)
+		sc_candidates = await loop.run_in_executor(None, list_candidates_sc)
+		bc_candidates = await loop.run_in_executor(None, list_candidates_bc)
+		all_candidates: List[Dict[str, Any]] = []
+		all_candidates.extend(yt_candidates)
+		all_candidates.extend(sc_candidates)
+		all_candidates.extend(bc_candidates)
+		if not all_candidates:
+			continue  # Пробуем следующий вариант запроса
 
-	if track is not None:
-		all_candidates.sort(key=lambda c: _score_candidate(track, c), reverse=True)
+		if track is not None:
+			all_candidates.sort(key=lambda c: _score_candidate(track, c), reverse=True)
 
-	for cand in all_candidates:
-		result = await loop.run_in_executor(None, try_download, cand["url"])
-		if result:
-			return result
+		for cand in all_candidates:
+			result = await loop.run_in_executor(None, try_download, cand["url"])
+			if result:
+				return result
 
 	return None
 
@@ -427,7 +439,7 @@ async def process_single_track(update: Update, context: ContextTypes.DEFAULT_TYP
 	await send_typing(context, chat_id)
 
 	with tempfile.TemporaryDirectory() as tmpdir:
-		file_path = await download_audio_with_fallbacks(build_search_query(info), tmpdir, track=info)
+		file_path = await download_audio_with_fallbacks(build_search_queries(info)[0], tmpdir, track=info) # Use the first query for display
 		if not file_path or not os.path.exists(file_path):
 			await update.message.reply_text(f"Не удалось скачать: {title}. Пробуйте другой трек или позже.")
 			return
