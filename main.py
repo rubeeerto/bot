@@ -1,482 +1,548 @@
 import asyncio
+import logging
 import os
 import re
-import shutil
-import tempfile
-import base64
-import html
-from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Tuple
 
+import aiohttp
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
-from telegram import Update, InputFile
-from telegram.constants import ChatAction
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-
 import yt_dlp
-import requests
-# Добавим импорты для альтернативных загрузчиков
-try:
-	import youtube_dl
-except ImportError:
-	youtube_dl = None
-try:
-	from pytube import YouTube
-except ImportError:
-	YouTube = None
+import shutil
 
-try:
-	import spotipy
-	from spotipy.oauth2 import SpotifyClientCredentials
-except Exception:
-	spotipy = None
+from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider
 
-SPOTIFY_TRACK_RE = re.compile(r"https?://open\.spotify\.com/track/([a-zA-Z0-9]+)")
-SPOTIFY_PLAYLIST_RE = re.compile(r"https?://open\.spotify\.com/playlist/([a-zA-Z0-9]+)")
+# Загружаем переменные окружения
+load_dotenv()
 
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('bot.log')
+    ]
+)
+logger = logging.getLogger(__name__)
+# Проверка наличия ffmpeg
+def is_ffmpeg_available() -> bool:
+    return shutil.which("ffmpeg") is not None
 
-@dataclass
-class TrackInfo:
-	title: str
-	artists: List[str]
-	duration_seconds: Optional[int] = None
+# Инициализация бота
+bot = Bot(token=os.getenv('TELEGRAM_TOKEN'))
+dp = Dispatcher()
 
-	@property
-	def display_title(self) -> str:
-		artists = ", ".join(self.artists) if self.artists else ""
-		return f"{self.title} - {artists}" if artists else self.title
+# Инициализация Spotify API
+spotify_client_id = os.getenv('SPOTIFY_CLIENT_ID')
+spotify_client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
 
-
-def load_env():
-	load_dotenv()
+# Создаем экземпляр парсера Spotify
+spotify_parser = EnhancedSpotifyParser(spotify_client_id, spotify_client_secret)
 
 
-def get_spotify_client():
-	client_id = os.getenv("SPOTIFY_CLIENT_ID")
-	client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
-	if not client_id or not client_secret:
-		return None
-	if spotipy is None:
-		return None
-	auth_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
-	return spotipy.Spotify(auth_manager=auth_manager)
+class MusicDownloader:
+    """Класс для поиска и скачивания музыки"""
+    
+    @staticmethod
+    async def search_and_download(query: str, track_info: dict = None) -> Optional[str]:
+        """Ищет и скачивает музыку по запросу"""
+        try:
+            # Очищаем запрос от недопустимых символов
+            clean_query = clean_filename(query)
+            logger.info(f"Download start. Query='{clean_query}'")
+            
+            # 1) Пробуем онлайн провайдера (JioSaavn)
+            try:
+                logger.info("Provider: JioSaavn")
+                async with JioSaavnProvider() as provider:
+                    path = await provider.download_best(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"JioSaavn success: {path}")
+                        return path
+            except Exception as _:
+                logger.exception("JioSaavn error")
+            
+            # 2) Пробуем SoundCloud: ищем несколько кандидатов и качаем через yt-dlp
+            try:
+                logger.info("Provider: SoundCloud")
+                async with SoundCloudProvider() as sc:
+                    sc_urls = await sc.search_urls(clean_query, limit=3)
+                logger.info(f"SoundCloud candidates: {len(sc_urls)}")
+                if sc_urls:
+                    ydl_sc_opts = {
+                        'format': 'bestaudio/best',
+                        'outtmpl': f'downloads/%(title)s.%(ext)s',
+                        'postprocessors': [
+                            {
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }
+                        ],
+                        'prefer_ffmpeg': True,
+                        'noprogress': True,
+                        'noplaylist': True,
+                        'quiet': True,
+                        'no_warnings': True,
+                        'windowsfilenames': True,
+                    }
+                    import yt_dlp as _yt
+                    with _yt.YoutubeDL(ydl_sc_opts) as ydl2:
+                        for url in sc_urls:
+                            try:
+                                logger.info(f"SoundCloud try: {url}")
+                                info = ydl2.extract_info(url, download=True)
+                                title = info.get('title') or 'track'
+                                candidate = f"downloads/{clean_filename(title)}.mp3"
+                                if os.path.exists(candidate):
+                                    logger.info(f"SoundCloud success: {candidate}")
+                                    return candidate
+                            except Exception:
+                                logger.exception("SoundCloud candidate failed")
+                                continue
+            except Exception:
+                logger.exception("SoundCloud provider error")
+            
+            # 2.5) Пробуем YouTube Music: ищем песни и качаем лучшего кандидата через yt-dlp
+            try:
+                ytm = YTMusicProvider()
+                ytm_candidates = ytm.search(clean_query, limit=7)
+                # если есть track_info, переформируем запросы и расширим список
+                if track_info:
+                    extra_q = f"{track_info.get('name','')} {track_info.get('artist','')}".strip()
+                    if extra_q and extra_q.lower() != clean_query.lower():
+                        ytm_candidates += ytm.search(extra_q, limit=7)
+                # сортируем по близости длительности, если известна
+                target_dur = track_info.get('duration') if track_info else None
+                if target_dur:
+                    ytm_candidates.sort(key=lambda c: abs((c.get('duration') or 0) - target_dur))
+                ydl_ytm_opts = {
+                    'format': 'bestaudio/best',
+                    'outtmpl': f'downloads/%(title)s.%(ext)s',
+                    'postprocessors': [
+                        {
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': '192',
+                        }
+                    ],
+                    'prefer_ffmpeg': True,
+                    'noprogress': True,
+                    'noplaylist': True,
+                    'quiet': True,
+                    'no_warnings': True,
+                    'windowsfilenames': True,
+                }
+                import yt_dlp as _ytm
+                with _ytm.YoutubeDL(ydl_ytm_opts) as ydlm:
+                    tried = 0
+                    for cand in ytm_candidates:
+                        if tried >= 5:
+                            break
+                        tried += 1
+                        url = cand.get('url')
+                        if not url:
+                            continue
+                        try:
+                            info = ydlm.extract_info(url, download=True)
+                            title = info.get('title') or cand.get('title') or 'track'
+                            candidate = f"downloads/{clean_filename(title)}.mp3"
+                            if os.path.exists(candidate):
+                                return candidate
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
+            # Настройки для yt-dlp
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                'postprocessors': [
+                    {
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '192',
+                    }
+                ],
+                'prefer_ffmpeg': True,
+                'noprogress': True,
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'max_filesize': 50 * 1024 * 1024,  # 50MB лимит
+                'windowsfilenames': True,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                logger.info("Provider: YouTube search")
+                # Ищем до 5 видео и выбираем наиболее подходящее
+                search_results = ydl.extract_info(
+                    f"ytsearch5:{clean_query}",
+                    download=False
+                )
+                
+                if not search_results or 'entries' not in search_results:
+                    logger.info("YouTube returned no entries")
+                    return None
+                
+                entries = [e for e in (search_results.get('entries') or []) if e]
+                if not entries:
+                    logger.info("YouTube entries empty")
+                    return None
+                
+                # Подбор по длительности (если известна)
+                target_duration = None
+                if track_info and isinstance(track_info.get('duration'), int) and track_info['duration'] > 0:
+                    target_duration = track_info['duration']
+                
+                def duration_score(e):
+                    d = e.get('duration') or 0
+                    if target_duration is None:
+                        return 0
+                    return abs(d - target_duration)
+                
+                # Сортируем: сначала по длительности, затем по просмотрам (если есть)
+                entries.sort(key=lambda e: (duration_score(e), -(e.get('view_count') or 0)))
+                best = entries[0]
+                video_url = best.get('webpage_url') or best.get('url')
+                if not video_url:
+                    logger.info("Best YouTube entry has no URL")
+                    return None
+                
+                # Скачиваем
+                logger.info(f"YouTube downloading: {video_url}")
+                ydl.download([video_url])
+                
+                # Возвращаем путь к файлу
+                title = best.get('title') or 'track'
+                filename = f"downloads/{clean_filename(title)}.mp3"
+                logger.info(f"YouTube success: {filename}")
+                return filename
+                
+        except Exception as e:
+            logger.exception("Downloader fatal error")
+            return None
 
 
-def resolve_spotify_track(url: str, sp_client=None) -> Optional[TrackInfo]:
-	m = SPOTIFY_TRACK_RE.search(url)
-	if not m:
-		return None
-	track_id = m.group(1)
-	try:
-		if sp_client is not None:
-			t = sp_client.track(track_id)
-			name = t["name"]
-			artists = [a["name"] for a in t.get("artists", [])]
-			dur_ms = t.get("duration_ms") or 0
-			duration_seconds = int(round(dur_ms / 1000)) if dur_ms else None
-			return TrackInfo(title=name, artists=artists, duration_seconds=duration_seconds)
-		# Fallback: oEmbed
-		oembed = requests.get("https://open.spotify.com/oembed", params={"url": url}, timeout=15).json()
-		title = oembed.get("title")
-		if title and " - " in title:
-			t, a = title.split(" - ", 1)
-			return TrackInfo(title=t.strip(), artists=[a.strip()])
-		return TrackInfo(title=title or "Unknown", artists=[])
-	except Exception:
-		return None
+@dp.message(Command("start"))
+async def start_handler(message: Message):
+    """Обработчик команды /start"""
+    welcome_text = """
+🎵 Добро пожаловать в Spotify Music Bot!
+
+Отправьте мне ссылку на трек, плейлист или альбом Spotify, и я найду и отправлю вам MP3 файл.
+
+Поддерживаемые форматы:
+• https://open.spotify.com/track/...
+• https://open.spotify.com/playlist/...
+• https://open.spotify.com/album/...
+• spotify:track:...
+• spotify:playlist:...
+• spotify:album:...
+
+Команды:
+/start - Начать работу
+/help - Помощь
+
+Ограничения:
+• Плейлисты и альбомы: максимум 15 треков
+• Размер файла: максимум 50MB
+• Качество: 192kbps MP3
+    """
+    
+    await message.answer(welcome_text)
 
 
-def resolve_spotify_playlist(url: str, sp_client=None) -> List[TrackInfo]:
-	m = SPOTIFY_PLAYLIST_RE.search(url)
-	if not m or sp_client is None:
-		return []
-	playlist_id = m.group(1)
-	items: List[TrackInfo] = []
-	try:
-		results = sp_client.playlist_items(playlist_id, additional_types=("track",), limit=100)
-		while results:
-			for it in results.get("items", []):
-				tr = it.get("track")
-				if not tr:
-					continue
-				name = tr.get("name")
-				artists = [a.get("name") for a in (tr.get("artists") or []) if a]
-				dur_ms = (tr.get("duration_ms") or 0)
-				duration_seconds = int(round(dur_ms / 1000)) if dur_ms else None
-				if name:
-					items.append(TrackInfo(title=name, artists=artists, duration_seconds=duration_seconds))
-			if results.get("next"):
-				results = sp_client.next(results)
-			else:
-				break
-	except Exception:
-		return items
-	return items
+@dp.message(Command("help"))
+async def help_handler(message: Message):
+    """Обработчик команды /help"""
+    help_text = """
+📖 Помощь по использованию бота
+
+Как использовать:
+1. Скопируйте ссылку на трек, плейлист или альбом Spotify
+2. Отправьте ссылку боту
+3. Дождитесь обработки и получения MP3 файла
+
+Поддерживаемые форматы:
+• Треки: https://open.spotify.com/track/...
+• Плейлисты: https://open.spotify.com/playlist/...
+• Альбомы: https://open.spotify.com/album/...
+
+Примеры ссылок:
+• https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh
+• https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
+• https://open.spotify.com/album/1A2GTWGtFfWp7KSQTwWOyo
+
+Ограничения:
+• Плейлисты и альбомы: максимум 15 треков
+• Размер файла: максимум 50MB
+• Качество: 192kbps MP3
+
+Примечание: Бот работает через поиск в YouTube, поэтому качество может варьироваться.
+    """
+    
+    await message.answer(help_text)
 
 
-def build_search_queries(info: TrackInfo) -> list:
-	# Формируем несколько вариантов поискового запроса для повышения релевантности
-	base = f"{info.title} {' '.join(info.artists)}".strip()
-	queries = [
-		f"{base} official audio",
-		f"{base} lyrics",
-		f"{base} topic",
-		f"{base} audio",
-		f"{base} full song",
-		base
-	]
-	return queries
+@dp.message(F.text)
+async def process_spotify_link(message: Message):
+    """Обработчик ссылок Spotify"""
+    text = message.text.strip()
+    
+    if not spotify_parser.extract_ids_from_url(text):
+        await message.answer("❌ Пожалуйста, отправьте ссылку на трек или плейлист Spotify.")
+        return
+    
+    # Отправляем сообщение о начале обработки
+    processing_msg = await message.answer("🔄 Обрабатываю ссылку...")
+    
+    try:
+        # Извлекаем ID из ссылки
+        ids = spotify_parser.extract_ids_from_url(text)
+        
+        if ids['track']:
+            # Обрабатываем трек
+            await process_track(message, ids['track'], processing_msg)
+        elif ids['playlist']:
+            # Обрабатываем плейлист
+            await process_playlist(message, ids['playlist'], processing_msg)
+        elif ids['album']:
+            # Обрабатываем альбом
+            await process_album(message, ids['album'], processing_msg)
+        else:
+            await processing_msg.edit_text("❌ Не удалось распознать ссылку Spotify.")
+            
+    except Exception as e:
+        logger.error(f"Error processing Spotify link: {e}")
+        await processing_msg.edit_text("❌ Произошла ошибка при обработке ссылки.")
 
 
-def sanitize_filename(name: str) -> str:
-	return re.sub(r"[\\/:*?\"<>|]", "_", name).strip()[:150]
+async def process_track(message: Message, track_id: str, processing_msg: types.Message):
+    """Обрабатывает отдельный трек"""
+    try:
+        # Получаем информацию о треке
+        track_info = await spotify_parser.get_track_info(track_id)
+        
+        if not track_info:
+            await processing_msg.edit_text("❌ Не удалось получить информацию о треке.")
+            return
+        
+        # Обновляем сообщение
+        await processing_msg.edit_text(
+            f"🎵 Найден трек: {track_info['name']} - {track_info['artist']}\n"
+            f"⏱️ Длительность: {track_info['duration_formatted']}\n"
+            f"🔄 Ищу и скачиваю..."
+        )
+        
+        # Формируем поисковый запрос
+        search_query = spotify_parser.create_search_query(track_info)
+        
+        # Скачиваем музыку
+        file_path = await MusicDownloader.search_and_download(search_query, track_info)
+        
+        if file_path and os.path.exists(file_path):
+            # Получаем размер файла
+            file_size = os.path.getsize(file_path)
+            
+            # Отправляем файл
+            await message.answer_document(
+                document=types.FSInputFile(file_path),
+                caption=f"🎵 {track_info['name']} - {track_info['artist']}\n"
+                       f"⏱️ {track_info['duration_formatted']} | 📁 {format_file_size(file_size)}"
+            )
+            
+            # Удаляем временный файл
+            os.remove(file_path)
+            
+            await processing_msg.delete()
+        else:
+            await processing_msg.edit_text("❌ Не удалось найти или скачать трек.")
+            
+    except Exception as e:
+        logger.error(f"Error processing track: {e}")
+        await processing_msg.edit_text("❌ Произошла ошибка при обработке трека.")
 
 
-def _common_http_headers() -> dict:
-	return {
-		"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-		"Accept-Language": "en-US,en;q=0.9,ru;q=0.8",
-	}
+async def process_playlist(message: Message, playlist_id: str, processing_msg: types.Message):
+    """Обрабатывает плейлист"""
+    try:
+        # Получаем информацию о плейлисте
+        playlist_info = await spotify_parser.get_playlist_info(playlist_id)
+        
+        if not playlist_info:
+            await processing_msg.edit_text("❌ Не удалось получить информацию о плейлисте.")
+            return
+        
+        tracks = playlist_info['tracks']
+        
+        if len(tracks) > 15:
+            await processing_msg.edit_text(
+                f"⚠️ Плейлист '{playlist_info['name']}' содержит {len(tracks)} треков.\n"
+                f"Для больших плейлистов рекомендуется обрабатывать треки по отдельности.\n"
+                f"Максимум для обработки: 15 треков."
+            )
+            return
+        
+        # Обновляем сообщение
+        await processing_msg.edit_text(
+            f"🎵 Плейлист: {playlist_info['name']}\n"
+            f"👤 Автор: {playlist_info['owner']}\n"
+            f"📊 Треков: {len(tracks)}\n"
+            f"🔄 Начинаю скачивание..."
+        )
+        
+        downloaded_count = 0
+        
+        for i, track in enumerate(tracks, 1):
+            try:
+                # Обновляем прогресс
+                await processing_msg.edit_text(
+                    f"🎵 Плейлист: {playlist_info['name']}\n"
+                    f"📥 Скачиваю {i}/{len(tracks)}: {track['name']} - {track['artist']}"
+                )
+                
+                # Формируем поисковый запрос
+                search_query = spotify_parser.create_search_query(track)
+                
+                # Скачиваем музыку
+                file_path = await MusicDownloader.search_and_download(search_query, track)
+                
+                if file_path and os.path.exists(file_path):
+                    # Получаем размер файла
+                    file_size = os.path.getsize(file_path)
+                    
+                    # Отправляем файл
+                    await message.answer_document(
+                        document=types.FSInputFile(file_path),
+                        caption=f"🎵 {track['name']} - {track['artist']}\n"
+                               f"⏱️ {track['duration_formatted']} | 📁 {format_file_size(file_size)}"
+                    )
+                    
+                    # Удаляем временный файл
+                    os.remove(file_path)
+                    downloaded_count += 1
+                    
+                    # Небольшая пауза между скачиваниями
+                    await asyncio.sleep(2)
+                
+            except Exception as e:
+                logger.error(f"Error downloading track {track['name']}: {e}")
+                continue
+        
+        await processing_msg.edit_text(
+            f"✅ Скачивание завершено!\n"
+            f"🎵 Плейлист: {playlist_info['name']}\n"
+            f"📊 Успешно скачано: {downloaded_count}/{len(tracks)} треков"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing playlist: {e}")
+        await processing_msg.edit_text("❌ Произошла ошибка при обработке плейлиста.")
 
 
-def _write_cookies_from_env() -> Optional[str]:
-	"""If COOKIES_FILE_B64 env is set, write it to a temp file and return path."""
-	b64 = os.getenv("COOKIES_FILE_B64")
-	if not b64:
-		return None
-	try:
-		data = base64.b64decode(b64)
-		tmp = tempfile.NamedTemporaryFile(delete=False)
-		tmp.write(data)
-		tmp.flush()
-		tmp.close()
-		return tmp.name
-	except Exception:
-		return None
+async def process_album(message: Message, album_id: str, processing_msg: types.Message):
+    """Обрабатывает альбом"""
+    try:
+        # Получаем информацию об альбоме
+        album_info = await spotify_parser.get_album_info(album_id)
+        
+        if not album_info:
+            await processing_msg.edit_text("❌ Не удалось получить информацию об альбоме.")
+            return
+        
+        tracks = album_info['tracks']
+        
+        if len(tracks) > 15:
+            await processing_msg.edit_text(
+                f"⚠️ Альбом '{album_info['name']}' содержит {len(tracks)} треков.\n"
+                f"Для больших альбомов рекомендуется обрабатывать треки по отдельности.\n"
+                f"Максимум для обработки: 15 треков."
+            )
+            return
+        
+        # Обновляем сообщение
+        await processing_msg.edit_text(
+            f"🎵 Альбом: {album_info['name']}\n"
+            f"👤 Исполнитель: {album_info['artist']}\n"
+            f"📅 Год: {album_info['release_date']}\n"
+            f"📊 Треков: {len(tracks)}\n"
+            f"🔄 Начинаю скачивание..."
+        )
+        
+        downloaded_count = 0
+        
+        for i, track in enumerate(tracks, 1):
+            try:
+                # Обновляем прогресс
+                await processing_msg.edit_text(
+                    f"🎵 Альбом: {album_info['name']}\n"
+                    f"📥 Скачиваю {i}/{len(tracks)}: {track['name']}"
+                )
+                
+                # Формируем поисковый запрос
+                search_query = spotify_parser.create_search_query(track)
+                
+                # Скачиваем музыку
+                file_path = await MusicDownloader.search_and_download(search_query, track)
+                
+                if file_path and os.path.exists(file_path):
+                    # Получаем размер файла
+                    file_size = os.path.getsize(file_path)
+                    
+                    # Отправляем файл
+                    await message.answer_document(
+                        document=types.FSInputFile(file_path),
+                        caption=f"🎵 {track['name']} - {track['artist']}\n"
+                               f"⏱️ {track['duration_formatted']} | 📁 {format_file_size(file_size)}"
+                    )
+                    
+                    # Удаляем временный файл
+                    os.remove(file_path)
+                    downloaded_count += 1
+                    
+                    # Небольшая пауза между скачиваниями
+                    await asyncio.sleep(2)
+                
+            except Exception as e:
+                logger.error(f"Error downloading track {track['name']}: {e}")
+                continue
+        
+        await processing_msg.edit_text(
+            f"✅ Скачивание завершено!\n"
+            f"🎵 Альбом: {album_info['name']}\n"
+            f"📊 Успешно скачано: {downloaded_count}/{len(tracks)} треков"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing album: {e}")
+        await processing_msg.edit_text("❌ Произошла ошибка при обработке альбома.")
 
 
-def _search_bandcamp_candidates(query: str, limit: int = 5) -> List[str]:
-	"""Use DuckDuckGo HTML to find Bandcamp track URLs."""
-	q = f"site:bandcamp.com/track {query}"
-	headers = _common_http_headers()
-	r = requests.get("https://duckduckgo.com/html/", params={"q": q}, headers=headers, timeout=15)
-	if r.status_code != 200:
-		return []
-	html_text = r.text
-	urls: List[str] = []
-	for m in re.finditer(r"href=\"(/l/\?kh=[^\"&]*&uddg=([^\"]+))\"", html_text):
-		enc = m.group(2)
-		try:
-			decoded = requests.utils.unquote(enc)
-			decoded = html.unescape(decoded)
-			if "bandcamp.com/track/" in decoded:
-				urls.append(decoded)
-				if len(urls) >= limit:
-					break
-		except Exception:
-			continue
-	return urls
-
-
-def _norm(s: str) -> str:
-	return re.sub(r"\s+", " ", s.lower()).strip()
-
-
-def _score_candidate(track: TrackInfo, cand: Dict[str, Any]) -> float:
-	# Score by title/artist match and duration proximity
-	target_title = _norm(track.title)
-	artist_blob = _norm(" ".join(track.artists)) if track.artists else ""
-	cand_title = _norm(cand.get("title") or "")
-	cand_uploader = _norm(cand.get("uploader") or cand.get("channel") or "")
-	cand_channel = _norm(cand.get("channel") or "")
-	score = 0.0
-	if target_title and target_title in cand_title:
-		score += 3.0
-	if artist_blob and artist_blob and any(a in cand_title for a in artist_blob.split() if len(a) > 2):
-		score += 1.5
-	if artist_blob and (artist_blob in cand_uploader or artist_blob in cand_channel):
-		score += 1.0
-	# Prefer "Topic" channels and "official audio"
-	if "topic" in cand_channel:
-		score += 1.0
-	if "official" in cand_title or "audio" in cand_title:
-		score += 0.5
-	# Duration proximity
-	if track.duration_seconds and cand.get("duration"):
-		diff = abs(int(cand["duration"]) - int(track.duration_seconds))
-		if diff <= 2:
-			score += 3.0
-		elif diff <= 5:
-			score += 2.0
-		elif diff <= 10:
-			score += 1.0
-	return score
-
-
-async def download_audio_with_fallbacks(query: str, out_dir: str, track: Optional[TrackInfo] = None) -> Optional[str]:
-	# Если track передан, используем build_search_queries, иначе как раньше
-	loop = asyncio.get_event_loop()
-	search_queries = [query]
-	if track is not None:
-		search_queries = build_search_queries(track)
-
-	for search_query in search_queries:
-		def list_candidates_yt() -> List[Dict[str, Any]]:
-			opts = {
-				"quiet": True,
-				"no_warnings": True,
-				"noplaylist": True,
-				"default_search": "ytsearch",
-				"extract_flat": True,
-				"http_headers": _common_http_headers(),
-				"extractor_args": {
-					"youtube": {
-						"player_client": ["android"],
-						"player_skip": ["configs", "webpage"],
-					}
-				},
-				"sleep_requests": 1.0,
-			}
-			search = f"ytsearch15:{search_query}"
-			with yt_dlp.YoutubeDL(opts) as ydl:
-				info = ydl.extract_info(search, download=False)
-				entries = info.get("entries") or []
-				cands: List[Dict[str, Any]] = []
-				for e in entries:
-					cands.append({
-						"url": e.get("url") or e.get("webpage_url"),
-						"title": e.get("title"),
-						"duration": e.get("duration"),
-						"uploader": e.get("uploader"),
-						"channel": e.get("channel") or e.get("channel_id"),
-					})
-				return [c for c in cands if c.get("url")]
-
-		def list_candidates_sc() -> List[Dict[str, Any]]:
-			opts = {
-				"quiet": True,
-				"no_warnings": True,
-				"noplaylist": True,
-				"extract_flat": True,
-				"http_headers": _common_http_headers(),
-				"sleep_requests": 1.0,
-			}
-			search = f"scsearch15:{search_query}"
-			with yt_dlp.YoutubeDL(opts) as ydl:
-				info = ydl.extract_info(search, download=False)
-				entries = info.get("entries") or []
-				cands: List[Dict[str, Any]] = []
-				for e in entries:
-					cands.append({
-						"url": e.get("url") or e.get("webpage_url"),
-						"title": e.get("title"),
-						"duration": e.get("duration"),
-						"uploader": e.get("uploader"),
-						"channel": e.get("channel") or e.get("channel_id"),
-					})
-				return [c for c in cands if c.get("url")]
-
-		def list_candidates_bc() -> List[Dict[str, Any]]:
-			urls = _search_bandcamp_candidates(search_query, limit=5)
-			return [{"url": u, "title": u} for u in urls]
-
-		base_opts = {
-			"format": "bestaudio/best",
-			"outtmpl": os.path.join(out_dir, "%(title)s.%(ext)s"),
-			"noplaylist": True,
-			"quiet": True,
-			"no_warnings": True,
-			"retries": 3,
-			"socket_timeout": 30,
-			"http_headers": _common_http_headers(),
-			"extractor_args": {
-				"youtube": {
-					"player_client": ["android"],
-					"player_skip": ["configs", "webpage"],
-				},
-				"soundcloud": {
-					"client_id": [os.getenv("SOUNDCLOUD_CLIENT_ID")] if os.getenv("SOUNDCLOUD_CLIENT_ID") else None
-				}
-			},
-			"sleep_requests": 1.0,
-			"throttledratelimit": 1024 * 64,
-			"ratelimit": 1024 * 256,
-			"concurrent_fragment_downloads": 1,
-			"postprocessors": [
-				{
-					"key": "FFmpegExtractAudio",
-					"preferredcodec": "mp3",
-					"preferredquality": "192",
-				},
-				{
-					"key": "FFmpegMetadata",
-				},
-			],
-		}
-		proxy = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
-		if proxy:
-			base_opts["proxy"] = proxy
-		cookies_path = _write_cookies_from_env()
-		if cookies_path:
-			base_opts["cookiefile"] = cookies_path
-
-		def try_download(url: str) -> Optional[str]:
-			# 1. yt-dlp
-			try:
-				with yt_dlp.YoutubeDL(base_opts) as ydl:
-					info = ydl.extract_info(url, download=True)
-					if "entries" in info:
-						info = info["entries"][0]
-					for fn in os.listdir(out_dir):
-						if fn.lower().endswith(".mp3"):
-							return os.path.join(out_dir, fn)
-					return None
-			except Exception as e:
-				print(f"yt-dlp failed: {e}")
-			# 2. youtube-dl fallback
-			if youtube_dl is not None:
-				try:
-					ydl_opts = base_opts.copy()
-					ydl_opts.pop("extractor_args", None)  # youtube-dl не поддерживает extractor_args
-					with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-						info = ydl.extract_info(url, download=True)
-						if "entries" in info:
-							info = info["entries"][0]
-						for fn in os.listdir(out_dir):
-							if fn.lower().endswith(".mp3"):
-								return os.path.join(out_dir, fn)
-						return None
-				except Exception as e:
-					print(f"youtube-dl failed: {e}")
-			# 3. pytube fallback (только для YouTube)
-			if YouTube is not None and ("youtube.com" in url or "youtu.be" in url):
-				try:
-					yt = YouTube(url)
-					stream = yt.streams.filter(only_audio=True).first()
-					if stream:
-						out_file = stream.download(output_path=out_dir)
-						# Преобразуем в mp3, если нужно
-						if not out_file.lower().endswith(".mp3"):
-							import subprocess
-							mp3_path = os.path.splitext(out_file)[0] + ".mp3"
-							subprocess.run([
-								"ffmpeg", "-y", "-i", out_file, mp3_path
-							], check=True)
-							os.remove(out_file)
-							return mp3_path
-						return out_file
-					return None
-				except Exception as e:
-					print(f"pytube failed: {e}")
-			return None
-
-		# Aggregate and rank candidates
-		yt_candidates = await loop.run_in_executor(None, list_candidates_yt)
-		sc_candidates = await loop.run_in_executor(None, list_candidates_sc)
-		bc_candidates = await loop.run_in_executor(None, list_candidates_bc)
-		all_candidates: List[Dict[str, Any]] = []
-		all_candidates.extend(yt_candidates)
-		all_candidates.extend(sc_candidates)
-		all_candidates.extend(bc_candidates)
-		if not all_candidates:
-			continue  # Пробуем следующий вариант запроса
-
-		if track is not None:
-			all_candidates.sort(key=lambda c: _score_candidate(track, c), reverse=True)
-
-		for cand in all_candidates:
-			result = await loop.run_in_executor(None, try_download, cand["url"])
-			if result:
-				return result
-
-	return None
-
-
-async def send_typing(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int):
-	try:
-		await ctx.bot.send_chat_action(chat_id=chat_id, action=ChatAction.UPLOAD_DOCUMENT)
-	except Exception:
-		pass
-
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-	await update.message.reply_text(
-		"Отправь ссылку на Spotify трек или плейлист. Я найду на YouTube/SoundCloud/Bandcamp и пришлю MP3."
-	)
-
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-	if not update.message or not update.message.text:
-		return
-	text = update.message.text.strip()
-	sp_client = get_spotify_client()
-
-	track_info = resolve_spotify_track(text, sp_client)
-	if track_info:
-		await process_single_track(update, context, track_info)
-		return
-
-	playlist_infos = resolve_spotify_playlist(text, sp_client)
-	if playlist_infos:
-		await update.message.reply_text(
-			f"Найден плейлист: {len(playlist_infos)} трек(ов). Начинаю загрузку по одному..."
-		)
-		for idx, info in enumerate(playlist_infos, start=1):
-			try:
-				await process_single_track(update, context, info, prefix=f"[{idx}/{len(playlist_infos)}] ")
-				await asyncio.sleep(1.0)
-			except Exception:
-				continue
-		return
-
-	await update.message.reply_text("Пришлите ссылку на Spotify трек или плейлист.")
-
-
-async def process_single_track(update: Update, context: ContextTypes.DEFAULT_TYPE, info: TrackInfo, prefix: str = ""):
-	chat_id = update.effective_chat.id
-	title = info.display_title
-	await update.message.reply_text(f"{prefix}Ищу: {title}")
-	await send_typing(context, chat_id)
-
-	with tempfile.TemporaryDirectory() as tmpdir:
-		file_path = await download_audio_with_fallbacks(build_search_queries(info)[0], tmpdir, track=info) # Use the first query for display
-		if not file_path or not os.path.exists(file_path):
-			await update.message.reply_text(f"Не удалось скачать: {title}. Пробуйте другой трек или позже.")
-			return
-		desired_name = sanitize_filename(title) + ".mp3"
-		final_path = os.path.join(tmpdir, desired_name)
-		try:
-			shutil.move(file_path, final_path)
-		except Exception:
-			final_path = file_path
-
-		await send_typing(context, chat_id)
-		try:
-			with open(final_path, "rb") as f:
-				await update.message.reply_audio(audio=f, filename=os.path.basename(final_path), title=title)
-		except Exception:
-			with open(final_path, "rb") as f:
-				await update.message.reply_document(document=InputFile(f, filename=os.path.basename(final_path)))
-
-
-def main():
-	load_env()
-	token = os.getenv("BOT_TOKEN")
-	if not token:
-		raise RuntimeError("BOT_TOKEN not set in environment/.env")
-
-	app = Application.builder().token(token).concurrent_updates(True).build()
-
-	app.add_handler(CommandHandler("start", start))
-	app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-	print("Bot started. Waiting for messages...")
-	# Start polling; recommend ensuring only one instance is running on Railway
-	app.run_polling(drop_pending_updates=True)
+async def main():
+    """Основная функция"""
+    # Проверяем переменные окружения
+    if not os.getenv('TELEGRAM_TOKEN'):
+        logger.error("TELEGRAM_TOKEN not found in environment variables")
+        return
+    
+    # Создаем папку для загрузок
+    os.makedirs("downloads", exist_ok=True)
+    
+    logger.info("Starting Spotify Music Bot...")
+    logger.info(f"FFmpeg available: {is_ffmpeg_available()}")
+    logger.info(f"Spotify API configured: {bool(spotify_client_id and spotify_client_secret)}")
+    
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        logger.error(f"Bot startup error: {e}")
+        raise
 
 
 if __name__ == "__main__":
-	try:
-		main()
-	except (KeyboardInterrupt, SystemExit):
-		pass
+    asyncio.run(main())
