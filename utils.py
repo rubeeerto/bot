@@ -1284,3 +1284,112 @@ class YTMusicProvider:
             return path
         except Exception:
             return None
+
+
+class AudiomackProvider:
+    """Провайдер для поиска и скачивания с Audiomack"""
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    async def search_and_download(self, query: str) -> Optional[str]:
+        try:
+            search_url = f'https://audiomack.com/search?q={quote(query, safe="")}'
+            async with self.session.get(search_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            track_links = re.findall(r'href="(/song/[\w\-]+/[\w\-]+)"', html)
+            logger.info(f"[Audiomack] Candidates found: {len(track_links)} links -> {track_links[:3]}")
+            if not track_links:
+                logger.info(f"[Audiomack] No track candidates for query: {query}")
+                return None
+            for path in track_links[:3]:
+                url = f'https://audiomack.com{path}'
+                logger.info(f"[Audiomack] Trying download: {url}")
+                try:
+                    import yt_dlp
+                    ydl_opts = {
+                        'format': 'bestaudio/best',
+                        'outtmpl': f'downloads/%(title)s.%(ext)s',
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': '192',
+                        }],
+                        'noplaylist': True,
+                        'quiet': True,
+                        'no_warnings': True,
+                        'max_filesize': 50 * 1024 * 1024,
+                    }
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                        if info:
+                            title = clean_filename(info.get('title', 'Unknown'))
+                            for ext in ['mp3', 'webm', 'm4a']:
+                                file_path = f"downloads/{title}.{ext}"
+                                if os.path.exists(file_path):
+                                    return file_path
+                except Exception as ex:
+                    logger.error(f"Audiomack candidate failed: {ex}")
+                    continue
+        except Exception as e:
+            logger.error(f"AudiomackProvider error: {e}")
+        return None
+
+
+class MusopenProvider:
+    """Провайдер для скачивания классики с musopen.org"""
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    async def search_and_download(self, query: str) -> Optional[str]:
+        try:
+            search_url = f'https://musopen.org/music/search/?q={quote(query, safe="")}'
+            async with self.session.get(search_url, timeout=20) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            track_links = re.findall(r'href=["\'](/music/[\w\d\-]+/[\w\d\-/]+)["\']', html)
+            logger.info(f"[Musopen] Candidates found: {len(track_links)} -> {track_links[:3]}")
+            if not track_links:
+                logger.info(f"[Musopen] No track candidates for query: {query}")
+                return None
+            for path in track_links[:3]:
+                url = f'https://musopen.org{path}'
+                logger.info(f"[Musopen] Trying: {url}")
+                try:
+                    async with self.session.get(url, timeout=15) as resp2:
+                        if resp2.status != 200:
+                            continue
+                        inner = await resp2.text()
+                    # Ищем прямые mp3-ссылки на странице трека
+                    mp3_links = re.findall(r'href="(https://cdn\.musopen\.org/[^"]+\.mp3)"', inner)
+                    if mp3_links:
+                        audio_url = mp3_links[0]
+                        filename = os.path.basename(audio_url).split("?")[0]
+                        dest = os.path.join("downloads", filename)
+                        async with aiohttp.ClientSession() as s:
+                            path = await _download_file(s, audio_url, dest)
+                        if path:
+                            logger.info(f"[Musopen] Success: {path}")
+                            return path
+                except Exception as ex:
+                    logger.error(f"Musopen candidate error: {ex}")
+                    continue
+        except Exception as e:
+            logger.error(f"MusopenProvider error: {e}")
+        return None

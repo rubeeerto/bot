@@ -249,7 +249,31 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Deezer error: {e}")
             
-            # 2.14) Пробуем альтернативный YouTube провайдер
+            # 2.14) Пробуем Audiomack
+            try:
+                logger.info("Provider: Audiomack")
+                from utils import AudiomackProvider
+                async with AudiomackProvider() as audiomack_provider:
+                    path = await audiomack_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Audiomack success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Audiomack error: {e}")
+
+            # 2.15) Пробуем Musopen
+            try:
+                logger.info("Provider: Musopen")
+                from utils import MusopenProvider
+                async with MusopenProvider() as musopen_provider:
+                    path = await musopen_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Musopen success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Musopen error: {e}")
+            
+            # 2.16) Пробуем альтернативный YouTube провайдер
             try:
                 logger.info("Provider: AlternativeYouTube")
                 alt_yt_provider = AlternativeYouTubeProvider()
@@ -260,7 +284,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"AlternativeYouTube error: {e}")
             
-            # 2.15) Пробуем YouTube Music: ищем песни и качаем лучшего кандидата через yt-dlp
+            # 2.17) Пробуем YouTube Music: ищем песни и качаем лучшего кандидата через yt-dlp
             try:
                 ytm = YTMusicProvider()
                 ytm_candidates = ytm.search(clean_query, limit=7)
