@@ -13,7 +13,7 @@ import yt_dlp
 import shutil
 from aiohttp import web
 
-from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider
+from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -173,7 +173,18 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Mixcloud error: {e}")
             
-            # 2.11) Пробуем YouTube Music: ищем песни и качаем лучшего кандидата через yt-dlp
+            # 2.11) Пробуем альтернативный YouTube провайдер
+            try:
+                logger.info("Provider: AlternativeYouTube")
+                alt_yt_provider = AlternativeYouTubeProvider()
+                path = await alt_yt_provider.search_and_download(clean_query)
+                if path and os.path.exists(path):
+                    logger.info(f"AlternativeYouTube success: {path}")
+                    return path
+            except Exception as e:
+                logger.error(f"AlternativeYouTube error: {e}")
+            
+            # 2.12) Пробуем YouTube Music: ищем песни и качаем лучшего кандидата через yt-dlp
             try:
                 ytm = YTMusicProvider()
                 ytm_candidates = ytm.search(clean_query, limit=7)
@@ -224,7 +235,18 @@ class MusicDownloader:
             except Exception:
                 pass
 
-            # Настройки для yt-dlp с агрессивным обходом блокировок
+            # Настройки для yt-dlp с максимальным обходом блокировок
+            import random
+            
+            # Ротация User-Agent для обхода детекции
+            user_agents = [
+                'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+                'Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            ]
+            
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': f'downloads/%(title)s.%(ext)s',
@@ -242,41 +264,50 @@ class MusicDownloader:
                 'no_warnings': True,
                 'max_filesize': 50 * 1024 * 1024,  # 50MB лимит
                 'windowsfilenames': True,
-                # Агрессивный обход блокировок YouTube
+                # Максимальный обход блокировок YouTube
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'User-Agent': random.choice(user_agents),
                     'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'Accept-Encoding': 'gzip, deflate, br',
                     'DNT': '1',
                     'Connection': 'keep-alive',
                     'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
                 },
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android_music', 'android', 'web'],
+                        'player_client': ['ios', 'android_music', 'android', 'web'],
                         'skip': ['dash', 'hls'],
                         'player_skip': ['webpage'],
+                        'comment_sort': ['top'],
                     }
                 },
-                'retries': 5,
-                'fragment_retries': 5,
-                'retry_sleep': 3,
-                'sleep_interval': 1,
-                'max_sleep_interval': 5,
+                'retries': 10,
+                'fragment_retries': 10,
+                'retry_sleep': 5,
+                'sleep_interval': 2,
+                'max_sleep_interval': 10,
                 # Дополнительные настройки обхода
                 'geo_bypass': True,
                 'geo_bypass_country': 'US',
                 'cookiesfrombrowser': None,  # Отключаем cookies
+                'no_check_certificate': True,
+                'ignoreerrors': True,
+                # Прокси (если доступны)
+                'proxy': None,  # Можно добавить прокси позже
             }
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                logger.info("Provider: YouTube search")
-                # Ищем до 5 видео и выбираем наиболее подходящее
-                search_results = ydl.extract_info(
-                    f"ytsearch5:{clean_query}",
-                    download=False
-                )
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    logger.info("Provider: YouTube search")
+                    # Ищем до 5 видео и выбираем наиболее подходящее
+                    search_results = ydl.extract_info(
+                        f"ytsearch5:{clean_query}",
+                        download=False
+                    )
                 
                 if not search_results or 'entries' not in search_results:
                     logger.info("YouTube returned no entries")
@@ -315,6 +346,11 @@ class MusicDownloader:
                 filename = f"downloads/{clean_filename(title)}.mp3"
                 logger.info(f"YouTube success: {filename}")
                 return filename
+                
+            except Exception as e:
+                logger.error(f"YouTube search failed: {e}")
+                # Не прерываем выполнение, продолжаем с другими провайдерами
+                return None
                 
         except Exception as e:
             logger.exception("Downloader fatal error")

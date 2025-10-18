@@ -908,6 +908,97 @@ class MixcloudProvider:
         return None
 
 
+class AlternativeYouTubeProvider:
+    """Альтернативный YouTube провайдер с другими настройками обхода блокировок"""
+    
+    async def search_and_download(self, query: str) -> Optional[str]:
+        """Ищет треки через альтернативные YouTube методы"""
+        try:
+            import random
+            import yt_dlp
+            
+            # Альтернативные настройки для обхода блокировок
+            alt_user_agents = [
+                'Mozilla/5.0 (iPad; CPU OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+                'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/119.0'
+            ]
+            
+            ydl_opts = {
+                'format': 'worstaudio/worst',  # Берем худшее качество для обхода блокировок
+                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '128',  # Низкое качество для обхода
+                }],
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'max_filesize': 25 * 1024 * 1024,  # Меньший лимит
+                'http_headers': {
+                    'User-Agent': random.choice(alt_user_agents),
+                    'Accept': '*/*',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate',
+                    'Connection': 'keep-alive',
+                },
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['tv_embedded', 'tv', 'ios'],
+                        'skip': ['dash', 'hls'],
+                    }
+                },
+                'retries': 3,
+                'fragment_retries': 3,
+                'retry_sleep': 1,
+                'sleep_interval': 0.5,
+                'geo_bypass': True,
+                'geo_bypass_country': 'RU',  # Другая страна
+                'no_check_certificate': True,
+                'ignoreerrors': True,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # Пробуем разные поисковые запросы
+                search_queries = [
+                    f"{query} official",
+                    f"{query} audio",
+                    f"{query} music",
+                    f"{query} song"
+                ]
+                
+                for search_query in search_queries:
+                    try:
+                        search_results = ydl.extract_info(
+                            f"ytsearch3:{search_query}",
+                            download=False
+                        )
+                        
+                        if search_results and 'entries' in search_results:
+                            entries = [e for e in search_results['entries'] if e]
+                            if entries:
+                                # Берем первое видео
+                                video = entries[0]
+                                video_url = video.get('webpage_url') or video.get('url')
+                                if video_url:
+                                    ydl.download([video_url])
+                                    
+                                    # Ищем скачанный файл
+                                    title = clean_filename(video.get('title', 'Unknown'))
+                                    for ext in ['mp3', 'webm', 'm4a']:
+                                        file_path = f"downloads/{title}.{ext}"
+                                        if os.path.exists(file_path):
+                                            return file_path
+                    except Exception:
+                        continue
+                        
+        except Exception as e:
+            logger.error(f"AlternativeYouTubeProvider error: {e}")
+        return None
+
+
 class YTMusicProvider:
     """Провайдер поиска в YouTube Music через ytmusicapi (без ключа)"""
 
