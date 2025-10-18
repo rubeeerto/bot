@@ -98,10 +98,13 @@ class MusicDownloader:
                                 '-ar', '44100',
                                 '-ac', '2',
                                 '-avoid_negative_ts', 'make_zero',
-                                '-fflags', '+genpts'
+                                '-fflags', '+genpts',
+                                '-strict', '-2',  # Разрешаем экспериментальные кодеки
+                                '-max_muxing_queue_size', '1024'  # Увеличиваем буфер
                             ]
                         },
                         'ignoreerrors': True,  # Игнорируем ошибки постобработки
+                        'no_check_certificate': True,  # Отключаем проверку сертификатов
                     }
                     import yt_dlp as _yt
                     with _yt.YoutubeDL(ydl_sc_opts) as ydl2:

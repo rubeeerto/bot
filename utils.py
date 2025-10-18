@@ -659,6 +659,8 @@ class BandcampProvider:
                         if os.path.exists(file_path):
                             return file_path
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"BandcampProvider error: {e}")
         return None
 
@@ -726,6 +728,8 @@ class ArchiveOrgProvider:
                     path = await _download_file(s, mp3_url, dest)
                 return path
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"ArchiveOrgProvider error: {e}")
         return None
 
@@ -784,6 +788,8 @@ class FreeMusicArchiveProvider:
                     path = await _download_file(s, mp3_url, dest)
                 return path
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"FreeMusicArchiveProvider error: {e}")
         return None
 
@@ -839,6 +845,8 @@ class JamendoProvider:
                 path = await _download_file(s, audio_url, dest)
             return path
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"JamendoProvider error: {e}")
         return None
 
@@ -904,6 +912,8 @@ class MixcloudProvider:
                         if os.path.exists(file_path):
                             return file_path
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"MixcloudProvider error: {e}")
         return None
 
@@ -969,6 +979,8 @@ class VKMusicProvider:
                         if os.path.exists(file_path):
                             return file_path
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"VKMusicProvider error: {e}")
         return None
 
@@ -1034,6 +1046,8 @@ class YandexMusicProvider:
                         if os.path.exists(file_path):
                             return file_path
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"YandexMusicProvider error: {e}")
         return None
 
@@ -1099,6 +1113,8 @@ class DeezerProvider:
                         if os.path.exists(file_path):
                             return file_path
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"DeezerProvider error: {e}")
         return None
 
@@ -1190,6 +1206,8 @@ class AlternativeYouTubeProvider:
                         continue
                         
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"AlternativeYouTubeProvider error: {e}")
         return None
 
