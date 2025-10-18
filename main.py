@@ -13,7 +13,7 @@ import yt_dlp
 import shutil
 from aiohttp import web
 
-from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider
+from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider, VKMusicProvider, YandexMusicProvider, DeezerProvider
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -173,7 +173,40 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Mixcloud error: {e}")
             
-            # 2.11) Пробуем альтернативный YouTube провайдер
+            # 2.11) Пробуем VK Music
+            try:
+                logger.info("Provider: VK Music")
+                async with VKMusicProvider() as vk_provider:
+                    path = await vk_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"VK Music success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"VK Music error: {e}")
+            
+            # 2.12) Пробуем Яндекс.Музыка
+            try:
+                logger.info("Provider: Yandex Music")
+                async with YandexMusicProvider() as yandex_provider:
+                    path = await yandex_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Yandex Music success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Yandex Music error: {e}")
+            
+            # 2.13) Пробуем Deezer
+            try:
+                logger.info("Provider: Deezer")
+                async with DeezerProvider() as deezer_provider:
+                    path = await deezer_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Deezer success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Deezer error: {e}")
+            
+            # 2.14) Пробуем альтернативный YouTube провайдер
             try:
                 logger.info("Provider: AlternativeYouTube")
                 alt_yt_provider = AlternativeYouTubeProvider()
@@ -184,7 +217,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"AlternativeYouTube error: {e}")
             
-            # 2.12) Пробуем YouTube Music: ищем песни и качаем лучшего кандидата через yt-dlp
+            # 2.15) Пробуем YouTube Music: ищем песни и качаем лучшего кандидата через yt-dlp
             try:
                 ytm = YTMusicProvider()
                 ytm_candidates = ytm.search(clean_query, limit=7)

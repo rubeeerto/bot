@@ -908,6 +908,201 @@ class MixcloudProvider:
         return None
 
 
+class VKMusicProvider:
+    """Провайдер для поиска музыки в VK"""
+    
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def search_and_download(self, query: str) -> Optional[str]:
+        """Ищет треки в VK и скачивает через yt-dlp"""
+        try:
+            # Поиск в VK через поисковую систему
+            search_url = f"https://vk.com/search?c[q]={query}&c[section]=audio"
+            async with self.session.get(search_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            
+            # Парсим ссылки на аудио
+            import re
+            audio_links = re.findall(r'href="(/audio[^"]+)"', html)
+            
+            if not audio_links:
+                return None
+            
+            # Берем первую ссылку
+            audio_path = audio_links[0]
+            audio_url = f"https://vk.com{audio_path}"
+            
+            # Скачиваем через yt-dlp
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'max_filesize': 50 * 1024 * 1024,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(audio_url, download=True)
+                if info:
+                    title = clean_filename(info.get('title', 'Unknown'))
+                    for ext in ['mp3', 'webm', 'm4a']:
+                        file_path = f"downloads/{title}.{ext}"
+                        if os.path.exists(file_path):
+                            return file_path
+        except Exception as e:
+            logger.error(f"VKMusicProvider error: {e}")
+        return None
+
+
+class YandexMusicProvider:
+    """Провайдер для поиска в Яндекс.Музыке"""
+    
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def search_and_download(self, query: str) -> Optional[str]:
+        """Ищет треки в Яндекс.Музыке"""
+        try:
+            # Поиск через Яндекс.Музыку
+            search_url = f"https://music.yandex.ru/search?text={query}"
+            async with self.session.get(search_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            
+            # Парсим ссылки на треки
+            import re
+            track_links = re.findall(r'href="(/track/[^"]+)"', html)
+            
+            if not track_links:
+                return None
+            
+            # Берем первую ссылку
+            track_path = track_links[0]
+            track_url = f"https://music.yandex.ru{track_path}"
+            
+            # Скачиваем через yt-dlp
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'max_filesize': 50 * 1024 * 1024,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(track_url, download=True)
+                if info:
+                    title = clean_filename(info.get('title', 'Unknown'))
+                    for ext in ['mp3', 'webm', 'm4a']:
+                        file_path = f"downloads/{title}.{ext}"
+                        if os.path.exists(file_path):
+                            return file_path
+        except Exception as e:
+            logger.error(f"YandexMusicProvider error: {e}")
+        return None
+
+
+class DeezerProvider:
+    """Провайдер для поиска в Deezer"""
+    
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def search_and_download(self, query: str) -> Optional[str]:
+        """Ищет треки в Deezer"""
+        try:
+            # Поиск через Deezer
+            search_url = f"https://www.deezer.com/search/{query}"
+            async with self.session.get(search_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            
+            # Парсим ссылки на треки
+            import re
+            track_links = re.findall(r'href="(/track/[^"]+)"', html)
+            
+            if not track_links:
+                return None
+            
+            # Берем первую ссылку
+            track_path = track_links[0]
+            track_url = f"https://www.deezer.com{track_path}"
+            
+            # Скачиваем через yt-dlp
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'max_filesize': 50 * 1024 * 1024,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(track_url, download=True)
+                if info:
+                    title = clean_filename(info.get('title', 'Unknown'))
+                    for ext in ['mp3', 'webm', 'm4a']:
+                        file_path = f"downloads/{title}.{ext}"
+                        if os.path.exists(file_path):
+                            return file_path
+        except Exception as e:
+            logger.error(f"DeezerProvider error: {e}")
+        return None
+
+
 class AlternativeYouTubeProvider:
     """Альтернативный YouTube провайдер с другими настройками обхода блокировок"""
     
