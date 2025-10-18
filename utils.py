@@ -371,6 +371,51 @@ class JioSaavnProvider:
         except Exception:
             return None
 
+    async def download_best(self, query: str) -> Optional[str]:
+        """Ищет трек и скачивает лучшую доступную версию MP3. Возвращает путь к файлу."""
+        try:
+            results = await self.search(query, limit=5)
+            if not results:
+                return None
+            # Берем первый кандидат (можно улучшить по совпадению артиста/длительности)
+            candidate = results[0]
+            song = await self.get_song(candidate["id"]) if candidate.get("id") else None
+            if not song:
+                return None
+            # Ищем ссылку на 320/160/96 kbps
+            media_urls = []
+            for key in ("downloadUrl", "moreInfo"):
+                if isinstance(song.get(key), list):
+                    media_urls.extend(song.get(key) or [])
+                elif isinstance(song.get(key), dict):
+                    # иногда аудиоссылки в moreInfo.download_links и т.п.
+                    dl = song[key].get("download_links") if song[key] else None
+                    if isinstance(dl, list):
+                        media_urls.extend(dl)
+            # Плоский список url-строк
+            urls: List[str] = []
+            for item in media_urls:
+                if isinstance(item, dict):
+                    u = item.get("link") or item.get("url")
+                    if u:
+                        urls.append(u)
+                elif isinstance(item, str):
+                    urls.append(item)
+            # Фильтруем mp3 ссылки, предпочитая 320
+            preferred = [u for u in urls if "320" in u]
+            if not preferred:
+                preferred = [u for u in urls if u.endswith(".mp3")]
+            dl_url = preferred[0] if preferred else (urls[0] if urls else None)
+            if not dl_url:
+                return None
+            safe_name = clean_filename(f"{candidate['title']} - {candidate.get('primaryArtists','')}".strip())
+            dest = os.path.join("downloads", f"{safe_name}.mp3")
+            async with aiohttp.ClientSession() as s:
+                path = await _download_file(s, dl_url, dest)
+            return path
+        except Exception:
+            return None
+
 
 class SoundCloudProvider:
     """Онлайн-провайдер: поиск треков на SoundCloud (через HTML) и скачивание через yt-dlp"""
@@ -404,11 +449,11 @@ class SoundCloudProvider:
             for m in _re.finditer(r'href="(/[^"\s]+/[^"\s]+)"', html):
                 path = m.group(1)
                 # отбрасываем плейлисты и всякое
-                if "/sets/" in path or path.startswith("/search"):
+                if "/sets/" in path or path.startswith("/search") or "/popular/" in path:
                     continue
                 if path.count('/') >= 2:  # обычно /artist/track
                     url = f"https://soundcloud.com{path}"
-                    if url not in candidates:
+                    if url not in candidates and not url.endswith("/popular/searches"):
                         candidates.append(url)
                 if len(candidates) >= limit:
                     break

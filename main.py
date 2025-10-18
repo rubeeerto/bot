@@ -158,7 +158,7 @@ class MusicDownloader:
             except Exception:
                 pass
 
-            # Настройки для yt-dlp
+            # Настройки для yt-dlp с обходом блокировок
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': f'downloads/%(title)s.%(ext)s',
@@ -176,6 +176,21 @@ class MusicDownloader:
                 'no_warnings': True,
                 'max_filesize': 50 * 1024 * 1024,  # 50MB лимит
                 'windowsfilenames': True,
+                # Обход блокировок YouTube
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                },
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'web'],
+                        'skip': ['dash', 'hls'],
+                    }
+                },
+                'retries': 3,
+                'fragment_retries': 3,
+                'retry_sleep': 2,
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
