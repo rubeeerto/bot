@@ -9,6 +9,7 @@ import os
 from typing import Tuple
 import logging
 logger = logging.getLogger(__name__)
+from urllib.parse import quote
 
 async def _download_file(session: aiohttp.ClientSession, url: str, dest_path: str) -> Optional[str]:
     """Скачивает файл по URL в указанный путь"""
@@ -931,7 +932,7 @@ class VKMusicProvider:
         try:
             import yt_dlp  # fix linter undefined
             # Поиск в VK через поисковую систему
-            search_url = f"https://vk.com/search?c[q]={query}&c[section]=audio"
+            search_url = f"https://vk.com/search?c[q]={quote(query, safe='')}&c[section]=audio"
             async with self.session.get(search_url, timeout=15) as resp:
                 if resp.status != 200:
                     return None
@@ -998,7 +999,7 @@ class YandexMusicProvider:
         """Ищет треки в Яндекс.Музыке"""
         try:
             # Поиск через Яндекс.Музыку
-            search_url = f"https://music.yandex.ru/search?text={query}"
+            search_url = f"https://music.yandex.ru/search?text={quote(query, safe='')}"
             async with self.session.get(search_url, timeout=15) as resp:
                 if resp.status != 200:
                     return None
@@ -1066,7 +1067,7 @@ class DeezerProvider:
         try:
             import yt_dlp  # fix linter undefined
             # Поиск через Deezer
-            search_url = f"https://www.deezer.com/search/{query}"
+            search_url = f"https://www.deezer.com/search/{quote(query, safe='')}"
             async with self.session.get(search_url, timeout=15) as resp:
                 if resp.status != 200:
                     return None
