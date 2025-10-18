@@ -491,6 +491,8 @@ class AlternativeMusicProvider:
             return await self._fallback_search(query)
             
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"AlternativeMusicProvider error: {e}")
             return None
     
@@ -937,6 +939,7 @@ class VKMusicProvider:
     async def search_and_download(self, query: str) -> Optional[str]:
         """Ищет треки в VK и скачивает через yt-dlp"""
         try:
+            import yt_dlp  # fix linter undefined
             # Поиск в VK через поисковую систему
             search_url = f"https://vk.com/search?c[q]={query}&c[section]=audio"
             async with self.session.get(search_url, timeout=15) as resp:
@@ -947,13 +950,15 @@ class VKMusicProvider:
             # Парсим ссылки на аудио
             import re
             audio_links = re.findall(r'href="(/audio[^"]+)"', html)
-            
+            logger.info(f"[VK] Candidates found: {len(audio_links)} links -> {audio_links[:3]}")
             if not audio_links:
+                logger.info(f"[VK] No audio candidates for query: {query}")
                 return None
             
             # Берем первую ссылку
             audio_path = audio_links[0]
             audio_url = f"https://vk.com{audio_path}"
+            logger.info(f"[VK] Downloading first candidate: {audio_url}")
             
             # Скачиваем через yt-dlp
             ydl_opts = {
@@ -1004,6 +1009,7 @@ class YandexMusicProvider:
     async def search_and_download(self, query: str) -> Optional[str]:
         """Ищет треки в Яндекс.Музыке"""
         try:
+            logger = logging.getLogger(__name__)
             # Поиск через Яндекс.Музыку
             search_url = f"https://music.yandex.ru/search?text={query}"
             async with self.session.get(search_url, timeout=15) as resp:
@@ -1014,13 +1020,15 @@ class YandexMusicProvider:
             # Парсим ссылки на треки
             import re
             track_links = re.findall(r'href="(/track/[^"]+)"', html)
-            
+            logger.info(f"[Yandex] Candidates found: {len(track_links)} links -> {track_links[:3]}")
             if not track_links:
+                logger.info(f"[Yandex] No track candidates for query: {query}")
                 return None
             
             # Берем первую ссылку
             track_path = track_links[0]
             track_url = f"https://music.yandex.ru{track_path}"
+            logger.info(f"[Yandex] Downloading first candidate: {track_url}")
             
             # Скачиваем через yt-dlp
             ydl_opts = {
@@ -1071,6 +1079,8 @@ class DeezerProvider:
     async def search_and_download(self, query: str) -> Optional[str]:
         """Ищет треки в Deezer"""
         try:
+            import yt_dlp  # fix linter undefined
+            logger = logging.getLogger(__name__)
             # Поиск через Deezer
             search_url = f"https://www.deezer.com/search/{query}"
             async with self.session.get(search_url, timeout=15) as resp:
@@ -1081,13 +1091,15 @@ class DeezerProvider:
             # Парсим ссылки на треки
             import re
             track_links = re.findall(r'href="(/track/[^"]+)"', html)
-            
+            logger.info(f"[Deezer] Candidates found: {len(track_links)} links -> {track_links[:3]}")
             if not track_links:
+                logger.info(f"[Deezer] No track candidates for query: {query}")
                 return None
             
             # Берем первую ссылку
             track_path = track_links[0]
             track_url = f"https://www.deezer.com{track_path}"
+            logger.info(f"[Deezer] Downloading first candidate: {track_url}")
             
             # Скачиваем через yt-dlp
             ydl_opts = {
