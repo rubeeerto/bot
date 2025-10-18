@@ -923,6 +923,9 @@ class MixcloudProvider:
 class VKMusicProvider:
     """Провайдер для поиска музыки в VK"""
     
+    import logging
+    logger = logging.getLogger(__name__)
+    
     def __init__(self):
         self.session: Optional[aiohttp.ClientSession] = None
     
@@ -993,6 +996,9 @@ class VKMusicProvider:
 class YandexMusicProvider:
     """Провайдер для поиска в Яндекс.Музыке"""
     
+    import logging
+    logger = logging.getLogger(__name__)
+    
     def __init__(self):
         self.session: Optional[aiohttp.ClientSession] = None
     
@@ -1009,7 +1015,6 @@ class YandexMusicProvider:
     async def search_and_download(self, query: str) -> Optional[str]:
         """Ищет треки в Яндекс.Музыке"""
         try:
-            logger = logging.getLogger(__name__)
             # Поиск через Яндекс.Музыку
             search_url = f"https://music.yandex.ru/search?text={query}"
             async with self.session.get(search_url, timeout=15) as resp:
@@ -1063,6 +1068,9 @@ class YandexMusicProvider:
 class DeezerProvider:
     """Провайдер для поиска в Deezer"""
     
+    import logging
+    logger = logging.getLogger(__name__)
+    
     def __init__(self):
         self.session: Optional[aiohttp.ClientSession] = None
     
@@ -1080,7 +1088,6 @@ class DeezerProvider:
         """Ищет треки в Deezer"""
         try:
             import yt_dlp  # fix linter undefined
-            logger = logging.getLogger(__name__)
             # Поиск через Deezer
             search_url = f"https://www.deezer.com/search/{query}"
             async with self.session.get(search_url, timeout=15) as resp:
