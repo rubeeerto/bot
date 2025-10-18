@@ -13,7 +13,7 @@ import yt_dlp
 import shutil
 from aiohttp import web
 
-from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider
+from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -107,7 +107,73 @@ class MusicDownloader:
             except Exception:
                 logger.exception("SoundCloud provider error")
             
-            # 2.5) Пробуем YouTube Music: ищем песни и качаем лучшего кандидата через yt-dlp
+            # 2.5) Пробуем альтернативный провайдер (Last.fm + другие источники)
+            try:
+                logger.info("Provider: AlternativeMusic")
+                async with AlternativeMusicProvider() as alt_provider:
+                    path = await alt_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"AlternativeMusic success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"AlternativeMusic error: {e}")
+            
+            # 2.6) Пробуем Bandcamp
+            try:
+                logger.info("Provider: Bandcamp")
+                async with BandcampProvider() as bc_provider:
+                    path = await bc_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Bandcamp success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Bandcamp error: {e}")
+            
+            # 2.7) Пробуем Internet Archive
+            try:
+                logger.info("Provider: Archive.org")
+                async with ArchiveOrgProvider() as arch_provider:
+                    path = await arch_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Archive.org success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Archive.org error: {e}")
+            
+            # 2.8) Пробуем Free Music Archive
+            try:
+                logger.info("Provider: Free Music Archive")
+                async with FreeMusicArchiveProvider() as fma_provider:
+                    path = await fma_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Free Music Archive success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Free Music Archive error: {e}")
+            
+            # 2.9) Пробуем Jamendo
+            try:
+                logger.info("Provider: Jamendo")
+                async with JamendoProvider() as jam_provider:
+                    path = await jam_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Jamendo success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Jamendo error: {e}")
+            
+            # 2.10) Пробуем Mixcloud
+            try:
+                logger.info("Provider: Mixcloud")
+                async with MixcloudProvider() as mix_provider:
+                    path = await mix_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Mixcloud success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Mixcloud error: {e}")
+            
+            # 2.11) Пробуем YouTube Music: ищем песни и качаем лучшего кандидата через yt-dlp
             try:
                 ytm = YTMusicProvider()
                 ytm_candidates = ytm.search(clean_query, limit=7)
@@ -158,7 +224,7 @@ class MusicDownloader:
             except Exception:
                 pass
 
-            # Настройки для yt-dlp с обходом блокировок
+            # Настройки для yt-dlp с агрессивным обходом блокировок
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': f'downloads/%(title)s.%(ext)s',
@@ -176,21 +242,32 @@ class MusicDownloader:
                 'no_warnings': True,
                 'max_filesize': 50 * 1024 * 1024,  # 50MB лимит
                 'windowsfilenames': True,
-                # Обход блокировок YouTube
+                # Агрессивный обход блокировок YouTube
                 'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'DNT': '1',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
                 },
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'web'],
+                        'player_client': ['android_music', 'android', 'web'],
                         'skip': ['dash', 'hls'],
+                        'player_skip': ['webpage'],
                     }
                 },
-                'retries': 3,
-                'fragment_retries': 3,
-                'retry_sleep': 2,
+                'retries': 5,
+                'fragment_retries': 5,
+                'retry_sleep': 3,
+                'sleep_interval': 1,
+                'max_sleep_interval': 5,
+                # Дополнительные настройки обхода
+                'geo_bypass': True,
+                'geo_bypass_country': 'US',
+                'cookiesfrombrowser': None,  # Отключаем cookies
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:

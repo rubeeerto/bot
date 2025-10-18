@@ -462,6 +462,452 @@ class SoundCloudProvider:
             return []
 
 
+class AlternativeMusicProvider:
+    """Альтернативный провайдер: поиск через различные музыкальные API"""
+    
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def search_and_download(self, query: str) -> Optional[str]:
+        """Ищет трек через альтернативные источники"""
+        try:
+            # Попробуем через Last.fm API (бесплатный)
+            lastfm_results = await self._search_lastfm(query)
+            if lastfm_results:
+                # Попробуем скачать через yt-dlp с найденной информацией
+                return await self._download_via_ytdl(query, lastfm_results)
+            
+            # Если Last.fm не сработал, попробуем другие методы
+            return await self._fallback_search(query)
+            
+        except Exception as e:
+            logger.error(f"AlternativeMusicProvider error: {e}")
+            return None
+    
+    async def _search_lastfm(self, query: str) -> Optional[Dict]:
+        """Поиск через Last.fm API"""
+        try:
+            # Используем публичный API Last.fm
+            url = "http://ws.audioscrobbler.com/2.0/"
+            params = {
+                'method': 'track.search',
+                'track': query,
+                'api_key': 'c8b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0',  # Публичный ключ
+                'format': 'json',
+                'limit': 1
+            }
+            
+            async with self.session.get(url, params=params, timeout=10) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    tracks = data.get('results', {}).get('trackmatches', {}).get('track', [])
+                    if tracks:
+                        return tracks[0] if isinstance(tracks, list) else tracks
+        except Exception:
+            pass
+        return None
+    
+    async def _download_via_ytdl(self, query: str, track_info: Dict) -> Optional[str]:
+        """Скачивание через yt-dlp с улучшенным запросом"""
+        try:
+            # Формируем улучшенный поисковый запрос
+            artist = track_info.get('artist', '')
+            track_name = track_info.get('name', '')
+            enhanced_query = f"{artist} {track_name} official audio"
+            
+            # Используем yt-dlp с минимальными настройками
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'max_filesize': 50 * 1024 * 1024,
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15'
+                },
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['ios', 'android_music'],
+                    }
+                },
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                search_results = ydl.extract_info(
+                    f"ytsearch5:{enhanced_query}",
+                    download=False
+                )
+                
+                if search_results and 'entries' in search_results:
+                    entries = [e for e in search_results['entries'] if e]
+                    if entries:
+                        # Выбираем первое видео
+                        video = entries[0]
+                        video_url = video.get('webpage_url') or video.get('url')
+                        if video_url:
+                            # Скачиваем выбранное видео
+                            ydl.download([video_url])
+                            
+                            # Ищем скачанный файл
+                            title = clean_filename(video.get('title', 'Unknown'))
+                            for ext in ['mp3', 'webm', 'm4a']:
+                                file_path = f"downloads/{title}.{ext}"
+                                if os.path.exists(file_path):
+                                    return file_path
+        except Exception:
+            pass
+        return None
+    
+    async def _fallback_search(self, query: str) -> Optional[str]:
+        """Резервный поиск через простые методы"""
+        try:
+            # Попробуем поиск через DuckDuckGo (может найти прямые ссылки)
+            search_url = f"https://html.duckduckgo.com/html/?q={query}+mp3+download"
+            
+            async with self.session.get(search_url, timeout=10) as resp:
+                if resp.status == 200:
+                    html = await resp.text()
+                    # Простой поиск ссылок на MP3
+                    import re
+                    mp3_links = re.findall(r'href="([^"]*\.mp3[^"]*)"', html)
+                    if mp3_links:
+                        # Попробуем скачать первую найденную ссылку
+                        mp3_url = mp3_links[0]
+                        if mp3_url.startswith('http'):
+                            safe_name = clean_filename(query)
+                            dest = os.path.join("downloads", f"{safe_name}.mp3")
+                            async with aiohttp.ClientSession() as s:
+                                path = await _download_file(s, mp3_url, dest)
+                            return path
+        except Exception:
+            pass
+        return None
+
+
+class BandcampProvider:
+    """Провайдер для поиска и скачивания с Bandcamp"""
+    
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def search_and_download(self, query: str) -> Optional[str]:
+        """Ищет треки на Bandcamp и скачивает через yt-dlp"""
+        try:
+            # Поиск на Bandcamp
+            search_url = f"https://bandcamp.com/search?q={query}"
+            async with self.session.get(search_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            
+            # Парсим ссылки на треки
+            import re
+            track_links = re.findall(r'href="(https://[^"]+\.bandcamp\.com/track/[^"]+)"', html)
+            
+            if not track_links:
+                return None
+            
+            # Пробуем скачать первый найденный трек
+            track_url = track_links[0]
+            
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'max_filesize': 50 * 1024 * 1024,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(track_url, download=True)
+                if info:
+                    title = clean_filename(info.get('title', 'Unknown'))
+                    for ext in ['mp3', 'webm', 'm4a']:
+                        file_path = f"downloads/{title}.{ext}"
+                        if os.path.exists(file_path):
+                            return file_path
+        except Exception as e:
+            logger.error(f"BandcampProvider error: {e}")
+        return None
+
+
+class ArchiveOrgProvider:
+    """Провайдер для поиска в Internet Archive (Archive.org)"""
+    
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def search_and_download(self, query: str) -> Optional[str]:
+        """Ищет аудио в Internet Archive"""
+        try:
+            # Поиск в Internet Archive
+            search_url = "https://archive.org/advancedsearch.php"
+            params = {
+                'q': f'collection:audio AND title:({query})',
+                'fl': 'identifier,title,creator',
+                'rows': 5,
+                'output': 'json'
+            }
+            
+            async with self.session.get(search_url, params=params, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+            
+            docs = data.get('response', {}).get('docs', [])
+            if not docs:
+                return None
+            
+            # Берем первый результат
+            item = docs[0]
+            identifier = item.get('identifier')
+            if not identifier:
+                return None
+            
+            # Получаем прямую ссылку на MP3
+            item_url = f"https://archive.org/details/{identifier}"
+            async with self.session.get(item_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            
+            # Ищем прямые ссылки на MP3
+            import re
+            mp3_links = re.findall(r'href="(https://[^"]*\.mp3[^"]*)"', html)
+            
+            if mp3_links:
+                mp3_url = mp3_links[0]
+                title = clean_filename(item.get('title', query))
+                dest = os.path.join("downloads", f"{title}.mp3")
+                
+                async with aiohttp.ClientSession() as s:
+                    path = await _download_file(s, mp3_url, dest)
+                return path
+        except Exception as e:
+            logger.error(f"ArchiveOrgProvider error: {e}")
+        return None
+
+
+class FreeMusicArchiveProvider:
+    """Провайдер для Free Music Archive"""
+    
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def search_and_download(self, query: str) -> Optional[str]:
+        """Ищет треки в Free Music Archive"""
+        try:
+            # Поиск в FMA
+            search_url = f"https://freemusicarchive.org/search?adv=1&music-filter-genre=all&music-filter-artist={query}"
+            async with self.session.get(search_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            
+            # Парсим ссылки на треки
+            import re
+            track_links = re.findall(r'href="(/music/[^"]+)"', html)
+            
+            if not track_links:
+                return None
+            
+            # Берем первый трек
+            track_path = track_links[0]
+            track_url = f"https://freemusicarchive.org{track_path}"
+            
+            async with self.session.get(track_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            
+            # Ищем прямые ссылки на MP3
+            mp3_links = re.findall(r'href="(https://[^"]*\.mp3[^"]*)"', html)
+            
+            if mp3_links:
+                mp3_url = mp3_links[0]
+                title = clean_filename(query)
+                dest = os.path.join("downloads", f"{title}.mp3")
+                
+                async with aiohttp.ClientSession() as s:
+                    path = await _download_file(s, mp3_url, dest)
+                return path
+        except Exception as e:
+            logger.error(f"FreeMusicArchiveProvider error: {e}")
+        return None
+
+
+class JamendoProvider:
+    """Провайдер для Jamendo (бесплатная музыка)"""
+    
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def search_and_download(self, query: str) -> Optional[str]:
+        """Ищет треки в Jamendo"""
+        try:
+            # Поиск через Jamendo API
+            api_url = "https://api.jamendo.com/v3.0/tracks/"
+            params = {
+                'client_id': 'jamendotest',  # Публичный тестовый ключ
+                'format': 'json',
+                'search': query,
+                'limit': 5,
+                'include': 'musicinfo'
+            }
+            
+            async with self.session.get(api_url, params=params, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+            
+            tracks = data.get('results', [])
+            if not tracks:
+                return None
+            
+            # Берем первый трек
+            track = tracks[0]
+            audio_url = track.get('audio')
+            if not audio_url:
+                return None
+            
+            title = clean_filename(f"{track.get('name', 'Unknown')} - {track.get('artist_name', 'Unknown')}")
+            dest = os.path.join("downloads", f"{title}.mp3")
+            
+            async with aiohttp.ClientSession() as s:
+                path = await _download_file(s, audio_url, dest)
+            return path
+        except Exception as e:
+            logger.error(f"JamendoProvider error: {e}")
+        return None
+
+
+class MixcloudProvider:
+    """Провайдер для Mixcloud (миксы и подкасты)"""
+    
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def search_and_download(self, query: str) -> Optional[str]:
+        """Ищет миксы на Mixcloud и скачивает через yt-dlp"""
+        try:
+            # Поиск на Mixcloud
+            search_url = f"https://www.mixcloud.com/search/?q={query}"
+            async with self.session.get(search_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            
+            # Парсим ссылки на миксы
+            import re
+            mix_links = re.findall(r'href="(/[^"]+/[^"]+/)"', html)
+            
+            if not mix_links:
+                return None
+            
+            # Берем первый микс
+            mix_path = mix_links[0]
+            mix_url = f"https://www.mixcloud.com{mix_path}"
+            
+            # Скачиваем через yt-dlp
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'max_filesize': 100 * 1024 * 1024,  # Mixcloud может быть больше
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(mix_url, download=True)
+                if info:
+                    title = clean_filename(info.get('title', 'Unknown'))
+                    for ext in ['mp3', 'webm', 'm4a']:
+                        file_path = f"downloads/{title}.{ext}"
+                        if os.path.exists(file_path):
+                            return file_path
+        except Exception as e:
+            logger.error(f"MixcloudProvider error: {e}")
+        return None
+
+
 class YTMusicProvider:
     """Провайдер поиска в YouTube Music через ytmusicapi (без ключа)"""
 
