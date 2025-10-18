@@ -11,6 +11,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 import yt_dlp
 import shutil
+from aiohttp import web
 
 from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider
 
@@ -523,6 +524,10 @@ async def process_album(message: Message, album_id: str, processing_msg: types.M
         await processing_msg.edit_text("❌ Произошла ошибка при обработке альбома.")
 
 
+async def health_check(request):
+    """Health check endpoint для Railway"""
+    return web.Response(text="Spotify Music Bot is running", status=200)
+
 async def main():
     """Основная функция"""
     # Проверяем переменные окружения
@@ -537,7 +542,21 @@ async def main():
     logger.info(f"FFmpeg available: {is_ffmpeg_available()}")
     logger.info(f"Spotify API configured: {bool(spotify_client_id and spotify_client_secret)}")
     
+    # Создаем HTTP сервер для health check
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    # Запускаем HTTP сервер в фоне
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv('PORT', 8000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    logger.info(f"HTTP server started on port {port}")
+    
     try:
+        # Запускаем Telegram бота
         await dp.start_polling(bot)
     except Exception as e:
         logger.error(f"Bot startup error: {e}")
