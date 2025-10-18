@@ -89,6 +89,19 @@ class MusicDownloader:
                         'quiet': True,
                         'no_warnings': True,
                         'windowsfilenames': True,
+                        # Исправления для FFmpeg проблем
+                        'ffmpeg_location': None,  # Используем системный FFmpeg
+                        'postprocessor_args': {
+                            'FFmpegExtractAudio': [
+                                '-acodec', 'mp3',
+                                '-ab', '192k',
+                                '-ar', '44100',
+                                '-ac', '2',
+                                '-avoid_negative_ts', 'make_zero',
+                                '-fflags', '+genpts'
+                            ]
+                        },
+                        'ignoreerrors': True,  # Игнорируем ошибки постобработки
                     }
                     import yt_dlp as _yt
                     with _yt.YoutubeDL(ydl_sc_opts) as ydl2:
@@ -97,12 +110,39 @@ class MusicDownloader:
                                 logger.info(f"SoundCloud try: {url}")
                                 info = ydl2.extract_info(url, download=True)
                                 title = info.get('title') or 'track'
-                                candidate = f"downloads/{clean_filename(title)}.mp3"
-                                if os.path.exists(candidate):
-                                    logger.info(f"SoundCloud success: {candidate}")
-                                    return candidate
-                            except Exception:
-                                logger.exception("SoundCloud candidate failed")
+                                
+                                # Ищем скачанный файл в разных форматах
+                                base_name = clean_filename(title)
+                                for ext in ['mp3', 'webm', 'm4a', 'ogg', 'wav']:
+                                    candidate = f"downloads/{base_name}.{ext}"
+                                    if os.path.exists(candidate):
+                                        logger.info(f"SoundCloud success: {candidate}")
+                                        return candidate
+                                
+                                # Если MP3 не найден, но есть другие форматы, конвертируем
+                                for ext in ['webm', 'm4a', 'ogg', 'wav']:
+                                    source_file = f"downloads/{base_name}.{ext}"
+                                    if os.path.exists(source_file):
+                                        # Пробуем конвертировать в MP3
+                                        mp3_file = f"downloads/{base_name}.mp3"
+                                        try:
+                                            import subprocess
+                                            result = subprocess.run([
+                                                'ffmpeg', '-i', source_file, 
+                                                '-acodec', 'mp3', '-ab', '192k',
+                                                '-ar', '44100', '-ac', '2',
+                                                '-y', mp3_file
+                                            ], capture_output=True, timeout=30)
+                                            if result.returncode == 0 and os.path.exists(mp3_file):
+                                                logger.info(f"SoundCloud converted success: {mp3_file}")
+                                                return mp3_file
+                                        except Exception:
+                                            # Если конвертация не удалась, возвращаем исходный файл
+                                            logger.info(f"SoundCloud success (original): {source_file}")
+                                            return source_file
+                                            
+                            except Exception as e:
+                                logger.error(f"SoundCloud candidate failed: {e}")
                                 continue
             except Exception:
                 logger.exception("SoundCloud provider error")
