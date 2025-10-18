@@ -7,6 +7,8 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
 from typing import Tuple
+import logging
+logger = logging.getLogger(__name__)
 
 async def _download_file(session: aiohttp.ClientSession, url: str, dest_path: str) -> Optional[str]:
     """Скачивает файл по URL в указанный путь"""
@@ -42,7 +44,7 @@ class EnhancedSpotifyParser:
                 )
                 self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
             except Exception as e:
-                print(f"Error initializing Spotify client: {e}")
+                logger.error(f"Error initializing Spotify client: {e}")
     
     def extract_ids_from_url(self, url: str) -> Dict[str, Optional[str]]:
         """Извлекает все возможные ID из ссылки Spotify"""
@@ -104,7 +106,7 @@ class EnhancedSpotifyParser:
                 'genres': track['album'].get('genres', [])
             }
         except Exception as e:
-            print(f"Error getting track info: {e}")
+            logger.error(f"Error getting track info: {e}")
             return None
     
     async def get_playlist_info(self, playlist_id: str) -> Optional[Dict]:
@@ -151,7 +153,7 @@ class EnhancedSpotifyParser:
                 'tracks': track_list
             }
         except Exception as e:
-            print(f"Error getting playlist info: {e}")
+            logger.error(f"Error getting playlist info: {e}")
             return None
     
     async def get_album_info(self, album_id: str) -> Optional[Dict]:
@@ -185,7 +187,7 @@ class EnhancedSpotifyParser:
                 'tracks': tracks
             }
         except Exception as e:
-            print(f"Error getting album info: {e}")
+            logger.error(f"Error getting album info: {e}")
             return None
     
     def _format_duration(self, duration_ms: int) -> str:
@@ -257,7 +259,7 @@ class MusicSearchEngine:
                 return results
                 
         except Exception as e:
-            print(f"Error searching YouTube: {e}")
+            logger.error(f"Error searching YouTube: {e}")
             return []
     
     async def search_soundcloud(self, query: str) -> List[Dict]:
@@ -491,8 +493,6 @@ class AlternativeMusicProvider:
             return await self._fallback_search(query)
             
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"AlternativeMusicProvider error: {e}")
             return None
     
@@ -661,8 +661,6 @@ class BandcampProvider:
                         if os.path.exists(file_path):
                             return file_path
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"BandcampProvider error: {e}")
         return None
 
@@ -730,8 +728,6 @@ class ArchiveOrgProvider:
                     path = await _download_file(s, mp3_url, dest)
                 return path
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"ArchiveOrgProvider error: {e}")
         return None
 
@@ -790,8 +786,6 @@ class FreeMusicArchiveProvider:
                     path = await _download_file(s, mp3_url, dest)
                 return path
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"FreeMusicArchiveProvider error: {e}")
         return None
 
@@ -847,8 +841,6 @@ class JamendoProvider:
                 path = await _download_file(s, audio_url, dest)
             return path
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"JamendoProvider error: {e}")
         return None
 
@@ -914,17 +906,12 @@ class MixcloudProvider:
                         if os.path.exists(file_path):
                             return file_path
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"MixcloudProvider error: {e}")
         return None
 
 
 class VKMusicProvider:
     """Провайдер для поиска музыки в VK"""
-    
-    import logging
-    logger = logging.getLogger(__name__)
     
     def __init__(self):
         self.session: Optional[aiohttp.ClientSession] = None
@@ -987,17 +974,12 @@ class VKMusicProvider:
                         if os.path.exists(file_path):
                             return file_path
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"VKMusicProvider error: {e}")
         return None
 
 
 class YandexMusicProvider:
     """Провайдер для поиска в Яндекс.Музыке"""
-    
-    import logging
-    logger = logging.getLogger(__name__)
     
     def __init__(self):
         self.session: Optional[aiohttp.ClientSession] = None
@@ -1059,17 +1041,12 @@ class YandexMusicProvider:
                         if os.path.exists(file_path):
                             return file_path
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"YandexMusicProvider error: {e}")
         return None
 
 
 class DeezerProvider:
     """Провайдер для поиска в Deezer"""
-    
-    import logging
-    logger = logging.getLogger(__name__)
     
     def __init__(self):
         self.session: Optional[aiohttp.ClientSession] = None
@@ -1132,8 +1109,6 @@ class DeezerProvider:
                         if os.path.exists(file_path):
                             return file_path
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"DeezerProvider error: {e}")
         return None
 
@@ -1225,8 +1200,6 @@ class AlternativeYouTubeProvider:
                         continue
                         
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"AlternativeYouTubeProvider error: {e}")
         return None
 
