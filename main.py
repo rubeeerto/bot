@@ -13,7 +13,7 @@ import yt_dlp
 import shutil
 from aiohttp import web
 
-from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider, VKMusicProvider, YandexMusicProvider, DeezerProvider
+from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider, VKMusicProvider, YandexMusicProvider, DeezerProvider, AudiomackProvider, MusopenProvider, PleerNetProvider, MP3JuicesProvider, ZaycevProvider, MyzukaProvider, RuTrackProvider, RedMp3Provider, Mp3SkullsProvider, Music7sProvider
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -164,7 +164,6 @@ class MusicDownloader:
             # 2.5A) Пробуем Pleer.net
             try:
                 logger.info("Provider: PleerNet")
-                from utils import PleerNetProvider
                 async with PleerNetProvider() as pleer_provider:
                     path = await pleer_provider.search_and_download(clean_query)
                     if path and os.path.exists(path):
@@ -175,7 +174,6 @@ class MusicDownloader:
             # 2.5B) Пробуем MP3Juices
             try:
                 logger.info("Provider: MP3Juices")
-                from utils import MP3JuicesProvider
                 async with MP3JuicesProvider() as mp3j_provider:
                     path = await mp3j_provider.search_and_download(clean_query)
                     if path and os.path.exists(path):
@@ -186,7 +184,6 @@ class MusicDownloader:
             # 2.5C) Пробуем Zaycev.net
             try:
                 logger.info("Provider: Zaycev.net")
-                from utils import ZaycevProvider
                 async with ZaycevProvider() as zaycev_provider:
                     path = await zaycev_provider.search_and_download(clean_query)
                     if path and os.path.exists(path):
@@ -198,7 +195,6 @@ class MusicDownloader:
             # 2.5D) Пробуем Myzuka.fm
             try:
                 logger.info("Provider: Myzuka.fm")
-                from utils import MyzukaProvider
                 async with MyzukaProvider() as myzuka_provider:
                     path = await myzuka_provider.search_and_download(clean_query)
                     if path and os.path.exists(path):
@@ -209,7 +205,6 @@ class MusicDownloader:
             # 2.5E) Пробуем rutracker.org (выдаём публичную ссылку, если найден торрент)
             try:
                 logger.info("Provider: RuTracker")
-                from utils import RuTrackProvider
                 async with RuTrackProvider() as rutr_provider:
                     info_url = await rutr_provider.search_and_download(clean_query)
                     if info_url:
@@ -309,7 +304,6 @@ class MusicDownloader:
             # 2.14) Пробуем Audiomack
             try:
                 logger.info("Provider: Audiomack")
-                from utils import AudiomackProvider
                 async with AudiomackProvider() as audiomack_provider:
                     path = await audiomack_provider.search_and_download(clean_query)
                     if path and os.path.exists(path):
@@ -321,7 +315,6 @@ class MusicDownloader:
             # 2.15) Пробуем Musopen
             try:
                 logger.info("Provider: Musopen")
-                from utils import MusopenProvider
                 async with MusopenProvider() as musopen_provider:
                     path = await musopen_provider.search_and_download(clean_query)
                     if path and os.path.exists(path):
@@ -512,7 +505,6 @@ class MusicDownloader:
             # 2.5F) Пробуем RedMp3
             try:
                 logger.info("Provider: RedMp3")
-                from utils import RedMp3Provider
                 async with RedMp3Provider() as redmp3:
                     path = await redmp3.search_and_download(clean_query)
                     if path and os.path.exists(path):
@@ -523,7 +515,6 @@ class MusicDownloader:
             # 2.5G) Пробуем Mp3Skulls
             try:
                 logger.info("Provider: Mp3Skulls")
-                from utils import Mp3SkullsProvider
                 async with Mp3SkullsProvider() as skulls:
                     path = await skulls.search_and_download(clean_query)
                     if path and os.path.exists(path):
@@ -534,7 +525,6 @@ class MusicDownloader:
             # 2.5H) Пробуем Music7s
             try:
                 logger.info("Provider: Music7s")
-                from utils import Music7sProvider
                 async with Music7sProvider() as music7s:
                     path = await music7s.search_and_download(clean_query)
                     if path and os.path.exists(path):
