@@ -14,6 +14,11 @@ try:
     from rapidfuzz import fuzz
 except ImportError:
     fuzz = None
+from unicodedata import normalize
+try:
+    from unidecode import unidecode  # если есть
+except ImportError:
+    unidecode = None
 from bs4 import BeautifulSoup
 import yt_dlp  # нужно для корректного использования
 
