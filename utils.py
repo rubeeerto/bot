@@ -1749,3 +1749,288 @@ class Music7sProvider:
         except Exception as e:
             logger.error(f"Music7sProvider error: {e}")
             return None
+
+
+class ImprovedSearchEngine:
+    """Улучшенный поисковый движок с приоритетом оригинальных версий"""
+    
+    @staticmethod
+    def filter_original_versions(candidates: List[Dict], track_info: dict = None) -> List[Dict]:
+        """Фильтрует кандидатов, отдавая приоритет оригинальным версиям"""
+        if not candidates:
+            return candidates
+            
+        # Слова-индикаторы неоригинальных версий
+        non_original_keywords = [
+            'slowed', 'sped up', 'nightcore', 'remix', 'edit', 'mashup',
+            'cover', 'acoustic', 'live', 'instrumental', 'karaoke',
+            'guitar', 'piano', 'orchestral', 'orchestra', 'symphony',
+            'extended', 'club', 'radio', 'clean', 'explicit',
+            'reverb', 'echo', 'bass boosted', '8d', '3d', 'spatial'
+        ]
+        
+        # Слова-индикаторы оригинальных версий
+        original_keywords = [
+            'original', 'official', 'studio', 'album version',
+            'single', 'main', 'standard'
+        ]
+        
+        scored_candidates = []
+        
+        for candidate in candidates:
+            title = candidate.get('title', '').lower()
+            score = 100  # Базовый скор
+            
+            # Штрафуем за неоригинальные версии
+            for keyword in non_original_keywords:
+                if keyword in title:
+                    score -= 30
+                    
+            # Бонус за оригинальные версии
+            for keyword in original_keywords:
+                if keyword in title:
+                    score += 20
+                    
+            # Бонус за совпадение длительности (если известна)
+            if track_info and track_info.get('duration'):
+                candidate_duration = candidate.get('duration', 0)
+                target_duration = track_info['duration']
+                if candidate_duration > 0:
+                    duration_diff = abs(candidate_duration - target_duration)
+                    if duration_diff <= 5:  # Разница до 5 секунд
+                        score += 25
+                    elif duration_diff <= 15:  # Разница до 15 секунд
+                        score += 10
+                    else:
+                        score -= 15
+                        
+            # Бонус за высокие просмотры (популярность)
+            view_count = candidate.get('view_count', 0)
+            if view_count > 1000000:
+                score += 15
+            elif view_count > 100000:
+                score += 10
+                
+            scored_candidates.append((candidate, score))
+            
+        # Сортируем по скору (убывание)
+        scored_candidates.sort(key=lambda x: x[1], reverse=True)
+        
+        # Возвращаем только кандидатов с положительным скором
+        return [candidate for candidate, score in scored_candidates if score > 0]
+
+    @staticmethod
+    def enhance_search_query(query: str, track_info: dict = None) -> List[str]:
+        """Создает улучшенные поисковые запросы с приоритетом оригинальных версий"""
+        queries = []
+        
+        # Основной запрос
+        queries.append(query)
+        
+        if track_info:
+            # Добавляем "official" для поиска оригинальных версий
+            artist = track_info.get('artist', '')
+            track_name = track_info.get('name', '')
+            
+            if artist and track_name:
+                queries.append(f'"{track_name}" "{artist}" official')
+                queries.append(f'"{track_name}" "{artist}" original')
+                queries.append(f'"{track_name}" "{artist}" studio version')
+                
+        return queries
+
+
+class EnhancedSoundCloudProvider(SoundCloudProvider):
+    """Улучшенный SoundCloud провайдер с фильтрацией версий"""
+    
+    async def search_and_download_best(self, query: str, track_info: dict = None) -> Optional[str]:
+        """Ищет лучшую версию трека на SoundCloud"""
+        try:
+            # Получаем кандидатов
+            candidates = await self.search_urls(query, limit=10)
+            if not candidates:
+                return None
+                
+            # Скачиваем информацию о каждом кандидате
+            candidate_info = []
+            for url in candidates:
+                try:
+                    import yt_dlp
+                    ydl_opts = {
+                        'quiet': True,
+                        'no_warnings': True,
+                        'extract_flat': True,
+                    }
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(url, download=False)
+                        if info:
+                            candidate_info.append({
+                                'url': url,
+                                'title': info.get('title', ''),
+                                'duration': info.get('duration', 0),
+                                'view_count': info.get('view_count', 0)
+                            })
+                except Exception:
+                    continue
+                    
+            # Фильтруем кандидатов
+            filtered_candidates = ImprovedSearchEngine.filter_original_versions(candidate_info, track_info)
+            
+            if not filtered_candidates:
+                return None
+                
+            # Скачиваем лучшего кандидата
+            best_candidate = filtered_candidates[0]
+            return await self._download_candidate(best_candidate['url'])
+            
+        except Exception as e:
+            logger.error(f"EnhancedSoundCloudProvider error: {e}")
+            return None
+            
+    async def _download_candidate(self, url: str) -> Optional[str]:
+        """Скачивает трек по URL"""
+        try:
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'noplaylist': True,
+                'quiet': True,
+                'no_warnings': True,
+                'windowsfilenames': True,
+            }
+            
+            import yt_dlp
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if info:
+                    title = clean_filename(info.get('title', 'track'))
+                    for ext in ['mp3', 'webm', 'm4a']:
+                        file_path = f"downloads/{title}.{ext}"
+                        if os.path.exists(file_path):
+                            return file_path
+            return None
+        except Exception:
+            return None
+
+
+class Mp3DownloadProvider:
+    """Провайдер mp3download.to - популярный mp3 сайт"""
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    async def search_and_download(self, query: str) -> Optional[str]:
+        try:
+            search_url = f'https://mp3download.to/search/{quote(query, safe="")}'
+            async with self.session.get(search_url, timeout=15) as resp:
+                html = await resp.text()
+            import re
+            # Ищем ссылки на треки
+            track_links = re.findall(r'<a href="(/download/[^"]+)"', html)
+            if not track_links:
+                return None
+            # Переходим на страницу трека
+            track_url = f'https://mp3download.to{track_links[0]}'
+            async with self.session.get(track_url, timeout=10) as resp:
+                track_html = await resp.text()
+            # Ищем прямую ссылку на mp3
+            mp3_links = re.findall(r'href="(https://[^"]+\.mp3[^"]*)"', track_html)
+            if not mp3_links:
+                return None
+            mp3_url = mp3_links[0]
+            safe_name = clean_filename(query)
+            dest = os.path.join("downloads", f"{safe_name}.mp3")
+            async with aiohttp.ClientSession() as s:
+                path = await _download_file(s, mp3_url, dest)
+            return path
+        except Exception as e:
+            logger.error(f"Mp3DownloadProvider error: {e}")
+            return None
+
+
+class Beemp3sProvider:
+    """Провайдер beemp3s.net - быстрый поиск mp3"""
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    async def search_and_download(self, query: str) -> Optional[str]:
+        try:
+            search_url = f'https://beemp3s.net/search/{quote(query, safe="")}'
+            async with self.session.get(search_url, timeout=12) as resp:
+                html = await resp.text()
+            import re
+            mp3_links = re.findall(r'<a[^>]+href=["\']([^"\']+\.mp3[^"\']*)["\']', html)
+            for link in mp3_links:
+                if link.startswith('//'):
+                    link = 'https:' + link
+                elif not link.startswith('http'):
+                    link = 'https://' + link
+                safe_name = clean_filename(query)
+                dest = os.path.join("downloads", f"{safe_name}.mp3")
+                async with aiohttp.ClientSession() as s:
+                    path = await _download_file(s, link, dest)
+                if path:
+                    return path
+            return None
+        except Exception as e:
+            logger.error(f"Beemp3sProvider error: {e}")
+            return None
+
+
+class VkMusicFunProvider:
+    """Провайдер vkmusic.fun - VK музыка без регистрации"""
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    async def search_and_download(self, query: str) -> Optional[str]:
+        try:
+            search_url = f'https://vkmusic.fun/search?q={quote(query, safe="")}'
+            async with self.session.get(search_url, timeout=15) as resp:
+                html = await resp.text()
+            import re
+            # Ищем ссылки на треки
+            track_links = re.findall(r'<a href="(/track/[^"]+)"', html)
+            if not track_links:
+                return None
+            # Переходим на страницу трека
+            track_url = f'https://vkmusic.fun{track_links[0]}'
+            async with self.session.get(track_url, timeout=10) as resp:
+                track_html = await resp.text()
+            # Ищем прямую ссылку на mp3
+            mp3_links = re.findall(r'href="(https://[^"]+\.mp3[^"]*)"', track_html)
+            if not mp3_links:
+                return None
+            mp3_url = mp3_links[0]
+            safe_name = clean_filename(query)
+            dest = os.path.join("downloads", f"{safe_name}.mp3")
+            async with aiohttp.ClientSession() as s:
+                path = await _download_file(s, mp3_url, dest)
+            return path
+        except Exception as e:
+            logger.error(f"VkMusicFunProvider error: {e}")
+            return None

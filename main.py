@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import re
+import time
 from typing import List, Optional, Tuple
 
 import aiohttp
@@ -13,7 +14,7 @@ import yt_dlp
 import shutil
 from aiohttp import web
 
-from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider, VKMusicProvider, YandexMusicProvider, DeezerProvider, AudiomackProvider, MusopenProvider, PleerNetProvider, MP3JuicesProvider, ZaycevProvider, MyzukaProvider, RuTrackProvider, RedMp3Provider, Mp3SkullsProvider, Music7sProvider
+from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider, VKMusicProvider, YandexMusicProvider, DeezerProvider, AudiomackProvider, MusopenProvider, PleerNetProvider, MP3JuicesProvider, ZaycevProvider, MyzukaProvider, RuTrackProvider, RedMp3Provider, Mp3SkullsProvider, Music7sProvider, Mp3DownloadProvider, Beemp3sProvider, VkMusicFunProvider, ImprovedSearchEngine, EnhancedSoundCloudProvider
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -66,9 +67,25 @@ class MusicDownloader:
             except Exception as _:
                 logger.exception("JioSaavn error")
             
-            # 2) Пробуем SoundCloud: ищем несколько кандидатов и качаем через yt-dlp
+            # Небольшая задержка между провайдерами
+            await asyncio.sleep(0.5)
+            
+            # 2) Пробуем улучшенный SoundCloud с фильтрацией версий
             try:
-                logger.info("Provider: SoundCloud")
+                logger.info("Provider: Enhanced SoundCloud")
+                async with EnhancedSoundCloudProvider() as sc:
+                    path = await sc.search_and_download_best(clean_query, track_info)
+                    if path and os.path.exists(path):
+                        logger.info(f"Enhanced SoundCloud success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Enhanced SoundCloud error: {e}")
+            
+            await asyncio.sleep(0.3)
+                
+            # 2.1) Пробуем обычный SoundCloud как fallback
+            try:
+                logger.info("Provider: SoundCloud Fallback")
                 async with SoundCloudProvider() as sc:
                     sc_urls = await sc.search_urls(clean_query, limit=3)
                 logger.info(f"SoundCloud candidates: {len(sc_urls)}")
@@ -150,6 +167,8 @@ class MusicDownloader:
             except Exception:
                 logger.exception("SoundCloud provider error")
             
+            await asyncio.sleep(0.4)
+            
             # 2.5) Пробуем альтернативный провайдер (Last.fm + другие источники)
             try:
                 logger.info("Provider: AlternativeMusic")
@@ -171,6 +190,8 @@ class MusicDownloader:
                         return path
             except Exception as e:
                 logger.error(f"PleerNet error: {e}")
+            
+            await asyncio.sleep(0.2)
             # 2.5B) Пробуем MP3Juices
             try:
                 logger.info("Provider: MP3Juices")
@@ -181,6 +202,8 @@ class MusicDownloader:
                         return path
             except Exception as e:
                 logger.error(f"MP3Juices error: {e}")
+            
+            await asyncio.sleep(0.2)
             # 2.5C) Пробуем Zaycev.net
             try:
                 logger.info("Provider: Zaycev.net")
@@ -522,16 +545,36 @@ class MusicDownloader:
                         return path
             except Exception as e:
                 logger.error(f"Mp3SkullsProvider error: {e}")
-            # 2.5H) Пробуем Music7s
+            # 2.5I) Пробуем Mp3Download.to
             try:
-                logger.info("Provider: Music7s")
-                async with Music7sProvider() as music7s:
-                    path = await music7s.search_and_download(clean_query)
+                logger.info("Provider: Mp3Download.to")
+                async with Mp3DownloadProvider() as mp3dl:
+                    path = await mp3dl.search_and_download(clean_query)
                     if path and os.path.exists(path):
-                        logger.info(f"Music7s success: {path}")
+                        logger.info(f"Mp3Download.to success: {path}")
                         return path
             except Exception as e:
-                logger.error(f"Music7sProvider error: {e}")
+                logger.error(f"Mp3DownloadProvider error: {e}")
+            # 2.5J) Пробуем Beemp3s.net
+            try:
+                logger.info("Provider: Beemp3s.net")
+                async with Beemp3sProvider() as beemp3s:
+                    path = await beemp3s.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Beemp3s.net success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Beemp3sProvider error: {e}")
+            # 2.5K) Пробуем VkMusic.fun
+            try:
+                logger.info("Provider: VkMusic.fun")
+                async with VkMusicFunProvider() as vkmusic:
+                    path = await vkmusic.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"VkMusic.fun success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"VkMusicFunProvider error: {e}")
 
         except Exception as e:
             logger.exception("Downloader fatal error")
