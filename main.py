@@ -195,6 +195,29 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"ZaycevProvider error: {e}")
             
+            # 2.5D) Пробуем Myzuka.fm
+            try:
+                logger.info("Provider: Myzuka.fm")
+                from utils import MyzukaProvider
+                async with MyzukaProvider() as myzuka_provider:
+                    path = await myzuka_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Myzuka.fm success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"MyzukaProvider error: {e}")
+            # 2.5E) Пробуем rutracker.org (выдаём публичную ссылку, если найден торрент)
+            try:
+                logger.info("Provider: RuTracker")
+                from utils import RuTrackProvider
+                async with RuTrackProvider() as rutr_provider:
+                    info_url = await rutr_provider.search_and_download(clean_query)
+                    if info_url:
+                        logger.info(f"RuTracker info for '{clean_query}': {info_url}")
+                        # Для этого типа результата можно отправить текстом ссылку пользователю, либо пробросить в формат ответа
+            except Exception as e:
+                logger.error(f"RuTrackProvider error: {e}")
+            
             # 2.6) Пробуем Bandcamp
             try:
                 logger.info("Provider: Bandcamp")
@@ -485,7 +508,41 @@ class MusicDownloader:
                 logger.error(f"YouTube search failed: {e}")
                 # Не прерываем выполнение, продолжаем с другими провайдерами
                 return None
-                
+            
+            # 2.5F) Пробуем RedMp3
+            try:
+                logger.info("Provider: RedMp3")
+                from utils import RedMp3Provider
+                async with RedMp3Provider() as redmp3:
+                    path = await redmp3.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"RedMp3 success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"RedMp3Provider error: {e}")
+            # 2.5G) Пробуем Mp3Skulls
+            try:
+                logger.info("Provider: Mp3Skulls")
+                from utils import Mp3SkullsProvider
+                async with Mp3SkullsProvider() as skulls:
+                    path = await skulls.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Mp3Skulls success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Mp3SkullsProvider error: {e}")
+            # 2.5H) Пробуем Music7s
+            try:
+                logger.info("Provider: Music7s")
+                from utils import Music7sProvider
+                async with Music7sProvider() as music7s:
+                    path = await music7s.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Music7s success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"Music7sProvider error: {e}")
+
         except Exception as e:
             logger.exception("Downloader fatal error")
             return None

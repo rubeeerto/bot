@@ -1567,3 +1567,185 @@ class ZaycevProvider:
         except Exception as e:
             logger.error(f"ZaycevProvider error: {e}")
             return None
+
+class MyzukaProvider:
+    """Провайдер для поиска и скачивания mp3 с myzuka.fm"""
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    async def search_and_download(self, query: str) -> Optional[str]:
+        try:
+            search_url = f'https://myzuka.fm/Search.aspx?Text={quote(query, safe="")}'
+            async with self.session.get(search_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            import re
+            links = re.findall(r'<a href="(/Track/\d+/[^"]+)"', html)
+            if not links:
+                return None
+            # Берём первую детальную страницу и ищем кнопку mp3/stream
+            detail_url = f'https://myzuka.fm{links[0]}'
+            async with self.session.get(detail_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                detail = await resp.text()
+            mp3_matches = re.findall(r'data-url="([^"]+\.mp3[^"]*)"', detail)
+            if not mp3_matches:
+                return None
+            mp3_url = mp3_matches[0]
+            safe_name = clean_filename(query)
+            dest = os.path.join("downloads", f"{safe_name}.mp3")
+            async with aiohttp.ClientSession() as s:
+                path = await _download_file(s, mp3_url, dest)
+            return path
+        except Exception as e:
+            logger.error(f"MyzukaProvider error: {e}")
+            return None
+
+class RuTrackProvider:
+    """Провайдер для поиска на rutracker.org (скачать .torrent -- опционально)."""
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    async def search_and_download(self, query: str) -> Optional[str]:
+        # Внимание! Для rutracker нужны прокси/куки, но мы попробуем только парсинг публичного поиска! Торренты не качаем, а только даем ссылку.
+        try:
+            search_url = f'https://rutracker.org/forum/tracker.php?nm={quote(query, safe="")}'
+            async with self.session.get(search_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return None
+                html = await resp.text()
+            import re
+            links = re.findall(r'<a class="tLink nowrap f\d+" href="([^"]+)"', html)
+            if not links:
+                return None
+            title = clean_filename(query)
+            info_url = f'https://rutracker.org{links[0]}'
+            # В данной реализации можно лишь вернуть info_url, но не скачивать .torrent без залогина
+            logger.info(f"RuTrackProvider: найден торрент для {query}: {info_url}")
+            return None
+        except Exception as e:
+            logger.error(f"RuTrackProvider error: {e}")
+            return None
+
+class RedMp3Provider:
+    """Провайдер redmp3.cc - прямые mp3 из поиска."""
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    async def search_and_download(self, query: str) -> Optional[str]:
+        try:
+            search_url = f'https://redmp3.cc/search/{quote(query, safe="")}/'
+            async with self.session.get(search_url, timeout=15) as resp:
+                html = await resp.text()
+            import re
+            links = re.findall(r'<a href="(/\d+\-[a-zA-Z0-9\-]+\.html)"', html)
+            if not links:
+                return None
+            detail_url = 'https://redmp3.cc' + links[0]
+            async with self.session.get(detail_url, timeout=8) as resp:
+                det = await resp.text()
+            mp3_links = re.findall(r'src="(https://files\.redmp3\.cc/[^\"]+\.mp3)"', det)
+            if not mp3_links:
+                return None
+            mp3_url = mp3_links[0]
+            safe_name = clean_filename(query)
+            dest = os.path.join("downloads", f"{safe_name}.mp3")
+            async with aiohttp.ClientSession() as s:
+                path = await _download_file(s, mp3_url, dest)
+            return path
+        except Exception as e:
+            logger.error(f"RedMp3Provider error: {e}")
+            return None
+
+class Mp3SkullsProvider:
+    """Провайдер mp3skulls.info - парсинг mp3 из поиска и деталек."""
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    async def search_and_download(self, query: str) -> Optional[str]:
+        try:
+            search_url = f'https://mp3skulls.info/mg/search.html?wm={quote(query, safe="")}'
+            async with self.session.get(search_url, timeout=12) as resp:
+                html = await resp.text()
+            import re
+            mp3_links = re.findall(r'<a[^>]*href=["\']([^"\']+\.mp3[^"\']*)["\'][^>]*>', html)
+            for link in mp3_links:
+                if link.startswith('//'):
+                    link = 'https:' + link
+                elif not link.startswith('http'):
+                    link = 'https://' + link
+                safe_name = clean_filename(query)
+                dest = os.path.join("downloads", f"{safe_name}.mp3")
+                async with aiohttp.ClientSession() as s:
+                    path = await _download_file(s, link, dest)
+                if path:
+                    return path
+            return None
+        except Exception as e:
+            logger.error(f"Mp3SkullsProvider error: {e}")
+            return None
+
+class Music7sProvider:
+    """Провайдер music7s.cc - быстрый поиск mp3."""
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    async def search_and_download(self, query: str) -> Optional[str]:
+        try:
+            search_url = f'https://music7s.cc/search?q={quote(query, safe="")}'
+            async with self.session.get(search_url, timeout=13) as resp:
+                html = await resp.text()
+            import re
+            mp3_links = re.findall(r'<a[^>]+href=["\']([^"\']+\.mp3[^"\']*)["\']', html)
+            for link in mp3_links:
+                if link.startswith('//'):
+                    link = 'https:' + link
+                elif not link.startswith('http'):
+                    link = 'https://' + link
+                safe_name = clean_filename(query)
+                dest = os.path.join("downloads", f"{safe_name}.mp3")
+                async with aiohttp.ClientSession() as s:
+                    path = await _download_file(s, link, dest)
+                if path:
+                    return path
+            return None
+        except Exception as e:
+            logger.error(f"Music7sProvider error: {e}")
+            return None
