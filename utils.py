@@ -1766,7 +1766,9 @@ class ImprovedSearchEngine:
             'cover', 'acoustic', 'live', 'instrumental', 'karaoke',
             'guitar', 'piano', 'orchestral', 'orchestra', 'symphony',
             'extended', 'club', 'radio', 'clean', 'explicit',
-            'reverb', 'echo', 'bass boosted', '8d', '3d', 'spatial'
+            'reverb', 'echo', 'bass boosted', '8d', '3d', 'spatial',
+            'super slowed', 'ultra slowed', 'extreme slowed', 'heavily slowed',
+            'slowed down', 'slow version', 'slow edit', 'slow remix'
         ]
         
         # Слова-индикаторы оригинальных версий
@@ -1785,6 +1787,10 @@ class ImprovedSearchEngine:
             for keyword in non_original_keywords:
                 if keyword in title:
                     score -= 30
+                    
+            # Особо строгий штраф за slowed версии
+            if any(keyword in title for keyword in ['slowed', 'super slowed', 'ultra slowed', 'extreme slowed']):
+                score -= 50  # Очень большой штраф
                     
             # Бонус за оригинальные версии
             for keyword in original_keywords:
@@ -1840,15 +1846,84 @@ class ImprovedSearchEngine:
         return queries
 
 
-class EnhancedSoundCloudProvider(SoundCloudProvider):
+class EnhancedSoundCloudProvider:
     """Улучшенный SoundCloud провайдер с фильтрацией версий"""
+    
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+        
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        return self
+        
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+    
+    async def search_urls(self, query: str, limit: int = 10) -> List[str]:
+        """Ищет URL треков на SoundCloud"""
+        try:
+            # Используем API SoundCloud для поиска
+            search_url = f"https://api-v2.soundcloud.com/search/tracks?q={quote(query, safe='')}&limit={limit}&client_id=YOUR_CLIENT_ID"
+            
+            # Fallback на веб-поиск если API не работает
+            try:
+                async with self.session.get(search_url, timeout=10) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if 'collection' in data:
+                            return [track['permalink_url'] for track in data['collection'] if track.get('permalink_url')]
+            except Exception:
+                pass
+            
+            # Веб-поиск как fallback
+            web_search_url = f"https://soundcloud.com/search/sounds?q={quote(query, safe='')}"
+            async with self.session.get(web_search_url, timeout=15) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+            
+            import re
+            # Ищем ссылки на треки в HTML
+            track_links = re.findall(r'href="(https://soundcloud\.com/[^"]+)"', html)
+            # Фильтруем только ссылки на треки (не на пользователей)
+            track_urls = [link for link in track_links if '/tracks/' in link]
+            
+            # Если веб-поиск не дал результатов, пробуем yt-dlp поиск
+            if not track_urls:
+                try:
+                    import yt_dlp
+                    ydl_opts = {
+                        'quiet': True,
+                        'no_warnings': True,
+                        'extract_flat': True,
+                    }
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        search_results = ydl.extract_info(f"scsearch{limit}:{query}", download=False)
+                        if search_results and 'entries' in search_results:
+                            entries = [e for e in search_results['entries'] if e]
+                            track_urls = [entry.get('webpage_url', '') for entry in entries if entry.get('webpage_url')]
+                except Exception as e:
+                    logger.warning(f"Enhanced SoundCloud yt-dlp search failed: {e}")
+            
+            return track_urls[:limit]
+        except Exception as e:
+            logger.error(f"EnhancedSoundCloud search error: {e}")
+            return []
     
     async def search_and_download_best(self, query: str, track_info: dict = None) -> Optional[str]:
         """Ищет лучшую версию трека на SoundCloud"""
         try:
+            logger.info(f"Enhanced SoundCloud: Searching for '{query}'")
+            
             # Получаем кандидатов
             candidates = await self.search_urls(query, limit=10)
+            logger.info(f"Enhanced SoundCloud: Found {len(candidates)} candidates")
+            
             if not candidates:
+                logger.info("Enhanced SoundCloud: No candidates found")
                 return None
                 
             # Скачиваем информацию о каждом кандидате
@@ -1870,17 +1945,25 @@ class EnhancedSoundCloudProvider(SoundCloudProvider):
                                 'duration': info.get('duration', 0),
                                 'view_count': info.get('view_count', 0)
                             })
-                except Exception:
+                            logger.info(f"Enhanced SoundCloud: Candidate '{info.get('title', '')}'")
+                except Exception as e:
+                    logger.warning(f"Enhanced SoundCloud: Failed to get info for {url}: {e}")
                     continue
                     
+            logger.info(f"Enhanced SoundCloud: Analyzed {len(candidate_info)} candidates")
+            
             # Фильтруем кандидатов
             filtered_candidates = ImprovedSearchEngine.filter_original_versions(candidate_info, track_info)
             
+            logger.info(f"Enhanced SoundCloud: After filtering: {len(filtered_candidates)} candidates")
+            
             if not filtered_candidates:
+                logger.info("Enhanced SoundCloud: No good candidates after filtering")
                 return None
                 
             # Скачиваем лучшего кандидата
             best_candidate = filtered_candidates[0]
+            logger.info(f"Enhanced SoundCloud: Best candidate '{best_candidate['title']}'")
             return await self._download_candidate(best_candidate['url'])
             
         except Exception as e:
