@@ -10,6 +10,12 @@ from typing import Tuple
 import logging
 logger = logging.getLogger(__name__)
 from urllib.parse import quote
+try:
+    from rapidfuzz import fuzz
+except ImportError:
+    fuzz = None
+from bs4 import BeautifulSoup
+import yt_dlp  # нужно для корректного использования
 
 async def _download_file(session: aiohttp.ClientSession, url: str, dest_path: str) -> Optional[str]:
     """Скачивает файл по URL в указанный путь"""
@@ -927,31 +933,56 @@ class VKMusicProvider:
         if self.session:
             await self.session.close()
     
-    async def search_and_download(self, query: str) -> Optional[str]:
-        """Ищет треки в VK и скачивает через yt-dlp"""
+    async def search_and_download(self, query: str, orig_title: Optional[str]=None, orig_artist: Optional[str]=None) -> Optional[str]:
+        """Ищет треки в VK и скачивает лучший по fuzzy сопоставлению"""
         try:
-            import yt_dlp  # fix linter undefined
+            import yt_dlp
+            import re
+            if fuzz is None:
+                logger.warning("RapidFuzz is not installed. Fuzzy matching will not work.")
+                return None
+            from rapidfuzz import fuzz
+            import aiohttp
+            from bs4 import BeautifulSoup
             # Поиск в VK через поисковую систему
             search_url = f"https://vk.com/search?c[q]={quote(query, safe='')}&c[section]=audio"
             async with self.session.get(search_url, timeout=15) as resp:
                 if resp.status != 200:
                     return None
                 html = await resp.text()
-            
-            # Парсим ссылки на аудио
-            import re
             audio_links = re.findall(r'href="(/audio[^"]+)"', html)
-            logger.info(f"[VK] Candidates found: {len(audio_links)} links -> {audio_links[:3]}")
+            logger.info(f"[VK] Candidates found: {len(audio_links)} links -> {audio_links[:5]}")
             if not audio_links:
                 logger.info(f"[VK] No audio candidates for query: {query}")
                 return None
-            
-            # Берем первую ссылку
-            audio_path = audio_links[0]
-            audio_url = f"https://vk.com{audio_path}"
-            logger.info(f"[VK] Downloading first candidate: {audio_url}")
-            
-            # Скачиваем через yt-dlp
+            candidates = []
+            for path in audio_links[:5]:
+                url = f"https://vk.com{path}"
+                async with self.session.get(url, timeout=15) as page:
+                    if page.status != 200:
+                        continue
+                    content = await page.text()
+                    # Метаинфо — парсим title
+                    soup = BeautifulSoup(content, "html.parser")
+                    title = soup.title.text.strip() if soup.title else ''
+                    # В title VK часто "Artist - Track Title"
+                    parts = title.split(' - ', 1)
+                    artist = parts[0] if len(parts)>1 else ''
+                    track = parts[1] if len(parts)>1 else title
+                    score = 0
+                    if orig_title and orig_artist:
+                        score = fuzz.ratio(track.lower(), orig_title.lower()) + fuzz.ratio(artist.lower(), orig_artist.lower())
+                    elif orig_title:
+                        score = fuzz.ratio(track.lower(), orig_title.lower())
+                    else:
+                        score = fuzz.ratio(title.lower(), query.lower())
+                    candidates.append({'url': url, 'score': score, 'title': title})
+            best = max(candidates, key=lambda c: c['score'], default=None)
+            if not best or best['score'] < 120:
+                logger.info(f"[VK] No good match, best scored {best['score'] if best else None}, query '{query}'")
+                return None
+            audio_url = best['url']
+            logger.info(f"[VK] Downloading best match: {audio_url} (score={best['score']})")
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': f'downloads/%(title)s.%(ext)s',
@@ -965,7 +996,6 @@ class VKMusicProvider:
                 'no_warnings': True,
                 'max_filesize': 50 * 1024 * 1024,
             }
-            
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(audio_url, download=True)
                 if info:
@@ -995,30 +1025,53 @@ class YandexMusicProvider:
         if self.session:
             await self.session.close()
     
-    async def search_and_download(self, query: str) -> Optional[str]:
-        """Ищет треки в Яндекс.Музыке"""
+    async def search_and_download(self, query: str, orig_title: Optional[str]=None, orig_artist: Optional[str]=None) -> Optional[str]:
+        """Ищет треки в Яндекс.Музыке по fuzzy совпадению"""
         try:
-            # Поиск через Яндекс.Музыку
+            import yt_dlp
+            import re
+            if fuzz is None:
+                logger.warning("RapidFuzz is not installed. Fuzzy matching will not work.")
+                return None
+            from rapidfuzz import fuzz
+            import aiohttp
+            from bs4 import BeautifulSoup
             search_url = f"https://music.yandex.ru/search?text={quote(query, safe='')}"
             async with self.session.get(search_url, timeout=15) as resp:
                 if resp.status != 200:
                     return None
                 html = await resp.text()
-            
-            # Парсим ссылки на треки
-            import re
             track_links = re.findall(r'href="(/track/[^"]+)"', html)
-            logger.info(f"[Yandex] Candidates found: {len(track_links)} links -> {track_links[:3]}")
+            logger.info(f"[Yandex] Candidates found: {len(track_links)} links -> {track_links[:5]}")
             if not track_links:
                 logger.info(f"[Yandex] No track candidates for query: {query}")
                 return None
-            
-            # Берем первую ссылку
-            track_path = track_links[0]
-            track_url = f"https://music.yandex.ru{track_path}"
-            logger.info(f"[Yandex] Downloading first candidate: {track_url}")
-            
-            # Скачиваем через yt-dlp
+            candidates = []
+            for path in track_links[:5]:
+                url = f"https://music.yandex.ru{path}"
+                async with self.session.get(url, timeout=15) as page:
+                    if page.status != 200:
+                        continue
+                    content = await page.text()
+                    soup = BeautifulSoup(content, "html.parser")
+                    title = soup.title.text.strip() if soup.title else ''
+                    parts = title.split(' — ', 1)
+                    artist = parts[0] if len(parts)>1 else ''
+                    track = parts[1] if len(parts)>1 else title
+                    score = 0
+                    if orig_title and orig_artist:
+                        score = fuzz.ratio(track.lower(), orig_title.lower()) + fuzz.ratio(artist.lower(), orig_artist.lower())
+                    elif orig_title:
+                        score = fuzz.ratio(track.lower(), orig_title.lower())
+                    else:
+                        score = fuzz.ratio(title.lower(), query.lower())
+                    candidates.append({'url': url, 'score': score, 'title': title})
+            best = max(candidates, key=lambda c: c['score'], default=None)
+            if not best or best['score'] < 120:
+                logger.info(f"[Yandex] No good match, best scored {best['score'] if best else None}, query '{query}'")
+                return None
+            track_url = best['url']
+            logger.info(f"[Yandex] Downloading best match: {track_url} (score={best['score']})")
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': f'downloads/%(title)s.%(ext)s',
@@ -1032,7 +1085,6 @@ class YandexMusicProvider:
                 'no_warnings': True,
                 'max_filesize': 50 * 1024 * 1024,
             }
-            
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(track_url, download=True)
                 if info:
@@ -1062,31 +1114,55 @@ class DeezerProvider:
         if self.session:
             await self.session.close()
     
-    async def search_and_download(self, query: str) -> Optional[str]:
-        """Ищет треки в Deezer"""
+    async def search_and_download(self, query: str, orig_title: Optional[str]=None, orig_artist: Optional[str]=None) -> Optional[str]:
+        """Ищет треки в Deezer по fuzzy совпадению"""
         try:
-            import yt_dlp  # fix linter undefined
-            # Поиск через Deezer
+            import yt_dlp
+            import re
+            if fuzz is None:
+                logger.warning("RapidFuzz is not installed. Fuzzy matching will not work.")
+                return None
+            from rapidfuzz import fuzz
+            import aiohttp
+            from bs4 import BeautifulSoup
             search_url = f"https://www.deezer.com/search/{quote(query, safe='')}"
             async with self.session.get(search_url, timeout=15) as resp:
                 if resp.status != 200:
                     return None
                 html = await resp.text()
-            
-            # Парсим ссылки на треки
-            import re
             track_links = re.findall(r'href="(/track/[^"]+)"', html)
-            logger.info(f"[Deezer] Candidates found: {len(track_links)} links -> {track_links[:3]}")
+            logger.info(f"[Deezer] Candidates found: {len(track_links)} links -> {track_links[:5]}")
             if not track_links:
                 logger.info(f"[Deezer] No track candidates for query: {query}")
                 return None
-            
-            # Берем первую ссылку
-            track_path = track_links[0]
-            track_url = f"https://www.deezer.com{track_path}"
-            logger.info(f"[Deezer] Downloading first candidate: {track_url}")
-            
-            # Скачиваем через yt-dlp
+            candidates = []
+            for path in track_links[:5]:
+                url = f"https://www.deezer.com{path}"
+                async with self.session.get(url, timeout=15) as page:
+                    if page.status != 200:
+                        continue
+                    content = await page.text()
+                    soup = BeautifulSoup(content, "html.parser")
+                    title = soup.title.text.strip() if soup.title else ''
+                    # Deezer: обычно title это "Artist - Track Title | Deezer"
+                    base_title = title.split('|')[0].strip()
+                    parts = base_title.split(' - ', 1)
+                    artist = parts[0] if len(parts)>1 else ''
+                    track = parts[1] if len(parts)>1 else base_title
+                    score = 0
+                    if orig_title and orig_artist:
+                        score = fuzz.ratio(track.lower(), orig_title.lower()) + fuzz.ratio(artist.lower(), orig_artist.lower())
+                    elif orig_title:
+                        score = fuzz.ratio(track.lower(), orig_title.lower())
+                    else:
+                        score = fuzz.ratio(title.lower(), query.lower())
+                    candidates.append({'url': url, 'score': score, 'title': title})
+            best = max(candidates, key=lambda c: c['score'], default=None)
+            if not best or best['score'] < 120:
+                logger.info(f"[Deezer] No good match, best scored {best['score'] if best else None}, query '{query}'")
+                return None
+            track_url = best['url']
+            logger.info(f"[Deezer] Downloading best match: {track_url} (score={best['score']})")
             ydl_opts = {
                 'format': 'bestaudio/best',
                 'outtmpl': f'downloads/%(title)s.%(ext)s',
@@ -1100,7 +1176,6 @@ class DeezerProvider:
                 'no_warnings': True,
                 'max_filesize': 50 * 1024 * 1024,
             }
-            
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(track_url, download=True)
                 if info:
