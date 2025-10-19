@@ -13,7 +13,9 @@ from urllib.parse import quote
 try:
     from rapidfuzz import fuzz
 except ImportError:
-    fuzz = None
+    import difflib
+    def fuzz(a, b):
+        return int(difflib.SequenceMatcher(None, a, b).ratio() * 100)
 from unicodedata import normalize
 try:
     from unidecode import unidecode  # если есть
@@ -943,12 +945,6 @@ class VKMusicProvider:
         try:
             import yt_dlp
             import re
-            if fuzz is None:
-                logger.warning("RapidFuzz is not installed. Fuzzy matching will not work.")
-                return None
-            from rapidfuzz import fuzz
-            import aiohttp
-            from bs4 import BeautifulSoup
             # Поиск в VK через поисковую систему
             search_url = f"https://vk.com/search?c[q]={quote(query, safe='')}&c[section]=audio"
             async with self.session.get(search_url, timeout=15) as resp:
@@ -1035,12 +1031,6 @@ class YandexMusicProvider:
         try:
             import yt_dlp
             import re
-            if fuzz is None:
-                logger.warning("RapidFuzz is not installed. Fuzzy matching will not work.")
-                return None
-            from rapidfuzz import fuzz
-            import aiohttp
-            from bs4 import BeautifulSoup
             search_url = f"https://music.yandex.ru/search?text={quote(query, safe='')}"
             async with self.session.get(search_url, timeout=15) as resp:
                 if resp.status != 200:
@@ -1124,12 +1114,6 @@ class DeezerProvider:
         try:
             import yt_dlp
             import re
-            if fuzz is None:
-                logger.warning("RapidFuzz is not installed. Fuzzy matching will not work.")
-                return None
-            from rapidfuzz import fuzz
-            import aiohttp
-            from bs4 import BeautifulSoup
             search_url = f"https://www.deezer.com/search/{quote(query, safe='')}"
             async with self.session.get(search_url, timeout=15) as resp:
                 if resp.status != 200:
