@@ -160,6 +160,40 @@ class MusicDownloader:
                         return path
             except Exception as e:
                 logger.error(f"AlternativeMusic error: {e}")
+
+            # 2.5A) Пробуем Pleer.net
+            try:
+                logger.info("Provider: PleerNet")
+                from utils import PleerNetProvider
+                async with PleerNetProvider() as pleer_provider:
+                    path = await pleer_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"PleerNet success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"PleerNet error: {e}")
+            # 2.5B) Пробуем MP3Juices
+            try:
+                logger.info("Provider: MP3Juices")
+                from utils import MP3JuicesProvider
+                async with MP3JuicesProvider() as mp3j_provider:
+                    path = await mp3j_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"MP3Juices success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"MP3Juices error: {e}")
+            # 2.5C) Пробуем Zaycev.net
+            try:
+                logger.info("Provider: Zaycev.net")
+                from utils import ZaycevProvider
+                async with ZaycevProvider() as zaycev_provider:
+                    path = await zaycev_provider.search_and_download(clean_query)
+                    if path and os.path.exists(path):
+                        logger.info(f"Zaycev.net success: {path}")
+                        return path
+            except Exception as e:
+                logger.error(f"ZaycevProvider error: {e}")
             
             # 2.6) Пробуем Bandcamp
             try:
