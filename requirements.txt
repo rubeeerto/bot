@@ -6,3 +6,4 @@ python-dotenv==1.0.0
 asyncio-throttle==1.0.2
 ytmusicapi==0.22.0
 rapidfuzz==3.6.1
+beautifulsoup4==4.12.3
