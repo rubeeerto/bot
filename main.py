@@ -1207,6 +1207,297 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Billboard error: {e}")
 
+            # 2.16) Пробуем дополнительные варианты поиска на YouTube
+            try:
+                logger.info("Provider: YouTube Variants")
+                # Пробуем разные варианты поискового запроса
+                search_variants = [
+                    clean_query,
+                    clean_query.replace('_', ' '),
+                    clean_query.replace('_', ' - '),
+                    clean_query.replace('_', ' ').replace(',', ' '),
+                    clean_query.replace('_', ' ').replace(',', ' - '),
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', ''),
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' '),
+                ]
+                
+                for variant in search_variants:
+                    if not variant.strip():
+                        continue
+                        
+                    try:
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'prefer_ffmpeg': True,
+                            'noprogress': True,
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'windowsfilenames': True,
+                            # Более агрессивные настройки для обхода блокировок
+                            'extractor_args': {
+                                'youtube': {
+                                    'player_client': ['android', 'web'],
+                                    'innertube_host': 'music.youtube.com',
+                                    'api_key': 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8',
+                                    'client_version': '17.31.35',
+                                }
+                            },
+                            'http_headers': {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                            },
+                            'retries': 3,
+                            'sleep_interval': 1,
+                            'max_sleep_interval': 5,
+                            'username': None,
+                            'password': None,
+                            'netrc': False,
+                        }
+                        import yt_dlp
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(f"ytsearch3:{variant}", download=False)
+                            if search_results and 'entries' in search_results and search_results['entries']:
+                                # Пробуем скачать первое видео
+                                video_url = search_results['entries'][0].get('webpage_url')
+                                if video_url:
+                                    try:
+                                        ydl.download([video_url])
+                                        title = search_results['entries'][0].get('title', 'track')
+                                        filename = f"downloads/{clean_filename(title)}.mp3"
+                                        if os.path.exists(filename):
+                                            logger.info(f"YouTube Variants success: {filename}")
+                                            return filename
+                                    except Exception as e:
+                                        logger.warning(f"YouTube Variants failed for '{variant}': {e}")
+                                        continue
+                    except Exception as e:
+                        logger.warning(f"YouTube Variants error for '{variant}': {e}")
+                        continue
+            except Exception as e:
+                logger.error(f"YouTube Variants error: {e}")
+
+            # 2.17) Пробуем SoundCloud с разными вариантами
+            try:
+                logger.info("Provider: SoundCloud Variants")
+                # Пробуем разные варианты поискового запроса на SoundCloud
+                search_variants = [
+                    clean_query,
+                    clean_query.replace('_', ' '),
+                    clean_query.replace('_', ' ').replace(',', ' '),
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', ''),
+                ]
+                
+                for variant in search_variants:
+                    if not variant.strip():
+                        continue
+                        
+                    try:
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'prefer_ffmpeg': True,
+                            'noprogress': True,
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'windowsfilenames': True,
+                        }
+                        import yt_dlp
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(f"scsearch3:{variant}", download=False)
+                            if search_results and 'entries' in search_results and search_results['entries']:
+                                # Пробуем скачать первое видео
+                                video_url = search_results['entries'][0].get('webpage_url')
+                                if video_url:
+                                    try:
+                                        ydl.download([video_url])
+                                        title = search_results['entries'][0].get('title', 'track')
+                                        filename = f"downloads/{clean_filename(title)}.mp3"
+                                        if os.path.exists(filename):
+                                            logger.info(f"SoundCloud Variants success: {filename}")
+                                            return filename
+                                    except Exception as e:
+                                        logger.warning(f"SoundCloud Variants failed for '{variant}': {e}")
+                                        continue
+                    except Exception as e:
+                        logger.warning(f"SoundCloud Variants error for '{variant}': {e}")
+                        continue
+            except Exception as e:
+                logger.error(f"SoundCloud Variants error: {e}")
+
+            # 2.18) Пробуем Bandcamp с разными вариантами
+            try:
+                logger.info("Provider: Bandcamp Variants")
+                # Пробуем разные варианты поискового запроса на Bandcamp
+                search_variants = [
+                    clean_query,
+                    clean_query.replace('_', ' '),
+                    clean_query.replace('_', ' ').replace(',', ' '),
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', ''),
+                ]
+                
+                for variant in search_variants:
+                    if not variant.strip():
+                        continue
+                        
+                    try:
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'prefer_ffmpeg': True,
+                            'noprogress': True,
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'windowsfilenames': True,
+                        }
+                        import yt_dlp
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(f"bandcampsearch3:{variant}", download=False)
+                            if search_results and 'entries' in search_results and search_results['entries']:
+                                # Пробуем скачать первое видео
+                                video_url = search_results['entries'][0].get('webpage_url')
+                                if video_url:
+                                    try:
+                                        ydl.download([video_url])
+                                        title = search_results['entries'][0].get('title', 'track')
+                                        filename = f"downloads/{clean_filename(title)}.mp3"
+                                        if os.path.exists(filename):
+                                            logger.info(f"Bandcamp Variants success: {filename}")
+                                            return filename
+                                    except Exception as e:
+                                        logger.warning(f"Bandcamp Variants failed for '{variant}': {e}")
+                                        continue
+                    except Exception as e:
+                        logger.warning(f"Bandcamp Variants error for '{variant}': {e}")
+                        continue
+            except Exception as e:
+                logger.error(f"Bandcamp Variants error: {e}")
+
+            # 2.19) Пробуем Mixcloud с разными вариантами
+            try:
+                logger.info("Provider: Mixcloud Variants")
+                # Пробуем разные варианты поискового запроса на Mixcloud
+                search_variants = [
+                    clean_query,
+                    clean_query.replace('_', ' '),
+                    clean_query.replace('_', ' ').replace(',', ' '),
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', ''),
+                ]
+                
+                for variant in search_variants:
+                    if not variant.strip():
+                        continue
+                        
+                    try:
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'prefer_ffmpeg': True,
+                            'noprogress': True,
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'windowsfilenames': True,
+                        }
+                        import yt_dlp
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(f"mixcloudsearch3:{variant}", download=False)
+                            if search_results and 'entries' in search_results and search_results['entries']:
+                                # Пробуем скачать первое видео
+                                video_url = search_results['entries'][0].get('webpage_url')
+                                if video_url:
+                                    try:
+                                        ydl.download([video_url])
+                                        title = search_results['entries'][0].get('title', 'track')
+                                        filename = f"downloads/{clean_filename(title)}.mp3"
+                                        if os.path.exists(filename):
+                                            logger.info(f"Mixcloud Variants success: {filename}")
+                                            return filename
+                                    except Exception as e:
+                                        logger.warning(f"Mixcloud Variants failed for '{variant}': {e}")
+                                        continue
+                    except Exception as e:
+                        logger.warning(f"Mixcloud Variants error for '{variant}': {e}")
+                        continue
+            except Exception as e:
+                logger.error(f"Mixcloud Variants error: {e}")
+
+            # 2.20) Пробуем Archive.org с разными вариантами
+            try:
+                logger.info("Provider: Archive.org Variants")
+                # Пробуем разные варианты поискового запроса на Archive.org
+                search_variants = [
+                    clean_query,
+                    clean_query.replace('_', ' '),
+                    clean_query.replace('_', ' ').replace(',', ' '),
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', ''),
+                ]
+                
+                for variant in search_variants:
+                    if not variant.strip():
+                        continue
+                        
+                    try:
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'prefer_ffmpeg': True,
+                            'noprogress': True,
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'windowsfilenames': True,
+                        }
+                        import yt_dlp
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(f"archiveorgsearch3:{variant}", download=False)
+                            if search_results and 'entries' in search_results and search_results['entries']:
+                                # Пробуем скачать первое видео
+                                video_url = search_results['entries'][0].get('webpage_url')
+                                if video_url:
+                                    try:
+                                        ydl.download([video_url])
+                                        title = search_results['entries'][0].get('title', 'track')
+                                        filename = f"downloads/{clean_filename(title)}.mp3"
+                                        if os.path.exists(filename):
+                                            logger.info(f"Archive.org Variants success: {filename}")
+                                            return filename
+                                    except Exception as e:
+                                        logger.warning(f"Archive.org Variants failed for '{variant}': {e}")
+                                        continue
+                    except Exception as e:
+                        logger.warning(f"Archive.org Variants error for '{variant}': {e}")
+                        continue
+            except Exception as e:
+                logger.error(f"Archive.org Variants error: {e}")
+
         except Exception as e:
             logger.exception("Downloader fatal error")
             return None
