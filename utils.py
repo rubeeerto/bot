@@ -2008,7 +2008,9 @@ class EnhancedSoundCloudProvider:
             # Скачиваем лучшего кандидата
             best_candidate = filtered_candidates[0]
             logger.info(f"Enhanced SoundCloud: Best candidate '{best_candidate['title']}'")
-            return await self._download_candidate(best_candidate['url'])
+            result = await self._download_candidate(best_candidate['url'])
+            logger.info(f"Enhanced SoundCloud: Download result: {result}")
+            return result
             
         except Exception as e:
             logger.error(f"EnhancedSoundCloudProvider error: {e}")
@@ -2036,12 +2038,57 @@ class EnhancedSoundCloudProvider:
                 info = ydl.extract_info(url, download=True)
                 if info:
                     title = clean_filename(info.get('title', 'track'))
-                    for ext in ['mp3', 'webm', 'm4a']:
+                    logger.info(f"Enhanced SoundCloud: Downloaded '{title}', looking for file...")
+                    
+                    # Ищем файл в разных форматах
+                    for ext in ['mp3', 'webm', 'm4a', 'ogg', 'wav']:
                         file_path = f"downloads/{title}.{ext}"
                         if os.path.exists(file_path):
+                            logger.info(f"Enhanced SoundCloud: Found file {file_path}")
                             return file_path
+                    
+                    # Если не нашли по точному названию, ищем все файлы в downloads
+                    logger.info("Enhanced SoundCloud: Searching for any new files in downloads/")
+                    import glob
+                    import time
+                    
+                    # Получаем список файлов до скачивания
+                    before_files = set(glob.glob("downloads/*"))
+                    
+                    # Ждем немного для завершения скачивания
+                    await asyncio.sleep(1)
+                    
+                    # Получаем список файлов после скачивания
+                    after_files = set(glob.glob("downloads/*"))
+                    
+                    # Находим новые файлы
+                    new_files = after_files - before_files
+                    logger.info(f"Enhanced SoundCloud: New files found: {new_files}")
+                    
+                    if new_files:
+                        # Берем первый новый файл
+                        new_file = list(new_files)[0]
+                        file_size = os.path.getsize(new_file)
+                        logger.info(f"Enhanced SoundCloud: Using new file {new_file} (size: {file_size} bytes)")
+                        
+                        # Проверяем, что файл не пустой
+                        if file_size > 0:
+                            return new_file
+                        else:
+                            logger.warning(f"Enhanced SoundCloud: File {new_file} is empty, trying next...")
+                            # Удаляем пустой файл и пробуем следующий
+                            os.remove(new_file)
+                            new_files.remove(new_file)
+                            if new_files:
+                                next_file = list(new_files)[0]
+                                next_size = os.path.getsize(next_file)
+                                if next_size > 0:
+                                    logger.info(f"Enhanced SoundCloud: Using next file {next_file} (size: {next_size} bytes)")
+                                    return next_file
+                        
             return None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Enhanced SoundCloud download error: {e}")
             return None
 
 

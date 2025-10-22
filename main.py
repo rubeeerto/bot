@@ -832,22 +832,36 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
         async with download_semaphore:
             file_path = await MusicDownloader.search_and_download(search_query, track_info)
         
+        # Добавляем подробное логирование для отладки
+        logger.info(f"Download result: file_path={file_path}")
+        if file_path:
+            logger.info(f"File exists: {os.path.exists(file_path)}")
+            if os.path.exists(file_path):
+                logger.info(f"File size: {os.path.getsize(file_path)} bytes")
+        
         if file_path and os.path.exists(file_path):
             # Получаем размер файла
             file_size = os.path.getsize(file_path)
+            logger.info(f"Sending file: {file_path} (size: {file_size} bytes)")
             
-            # Отправляем файл
-            await message.answer_document(
-                document=types.FSInputFile(file_path),
-                caption=f"🎵 {track_info['name']} - {track_info['artist']}\n"
-                       f"⏱️ {track_info['duration_formatted']} | 📁 {format_file_size(file_size)}"
-            )
-            
-            # Удаляем временный файл
-            os.remove(file_path)
-            
-            await processing_msg.delete()
+            try:
+                # Отправляем файл
+                await message.answer_document(
+                    document=types.FSInputFile(file_path),
+                    caption=f"🎵 {track_info['name']} - {track_info['artist']}\n"
+                           f"⏱️ {track_info['duration_formatted']} | 📁 {format_file_size(file_size)}"
+                )
+                
+                # Удаляем временный файл
+                os.remove(file_path)
+                logger.info(f"File sent successfully and removed: {file_path}")
+                
+                await processing_msg.delete()
+            except Exception as send_error:
+                logger.error(f"Error sending file: {send_error}")
+                await processing_msg.edit_text(f"❌ Ошибка отправки файла: {send_error}")
         else:
+            logger.error(f"File not found or invalid path: {file_path}")
             await processing_msg.edit_text("❌ Не удалось найти или скачать трек.")
             
     except Exception as e:
