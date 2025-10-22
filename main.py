@@ -1219,6 +1219,15 @@ class MusicDownloader:
                     clean_query.replace('_', ' ').replace(',', ' - '),
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', ''),
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' '),
+                    # Дополнительные варианты для сложных названий
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip(),
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' music',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' song',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' audio',
+                    # Пробуем только первую часть названия
+                    clean_query.split('_')[0] if '_' in clean_query else clean_query,
+                    # Пробуем только вторую часть названия
+                    clean_query.split('_')[1] if '_' in clean_query and len(clean_query.split('_')) > 1 else clean_query,
                 ]
                 
                 for variant in search_variants:
@@ -1664,6 +1673,61 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
             # Получаем размер файла
             file_size = os.path.getsize(file_path)
             logger.info(f"Sending file: {file_path} (size: {file_size} bytes)")
+            
+            # Проверяем формат файла и конвертируем если нужно
+            file_extension = os.path.splitext(file_path)[1].lower()
+            logger.info(f"File extension: {file_extension}")
+            
+            if file_extension not in ['.mp3', '.m4a', '.aac', '.ogg', '.wav']:
+                logger.error(f"Unsupported file format: {file_extension}")
+                await processing_msg.edit_text("❌ Неподдерживаемый формат файла.")
+                os.remove(file_path)
+                return
+            
+            # Если файл не в формате MP3, конвертируем его
+            if file_extension != '.mp3':
+                try:
+                    logger.info(f"Converting {file_extension} to MP3...")
+                    import yt_dlp
+                    ydl_opts = {
+                        'format': 'bestaudio/best',
+                        'outtmpl': f'downloads/%(title)s.%(ext)s',
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': '192',
+                        }],
+                        'prefer_ffmpeg': True,
+                        'noprogress': True,
+                        'noplaylist': True,
+                        'quiet': True,
+                        'no_warnings': True,
+                        'windowsfilenames': True,
+                    }
+                    
+                    # Конвертируем файл
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([file_path])
+                    
+                    # Удаляем оригинальный файл
+                    os.remove(file_path)
+                    
+                    # Ищем новый MP3 файл
+                    mp3_file = file_path.replace(file_extension, '.mp3')
+                    if os.path.exists(mp3_file):
+                        file_path = mp3_file
+                        file_size = os.path.getsize(file_path)
+                        logger.info(f"Converted to MP3: {file_path} ({file_size} bytes)")
+                    else:
+                        logger.error("Failed to convert to MP3")
+                        await processing_msg.edit_text("❌ Не удалось конвертировать файл в MP3.")
+                        return
+                        
+                except Exception as e:
+                    logger.error(f"Conversion error: {e}")
+                    await processing_msg.edit_text("❌ Ошибка конвертации файла.")
+                    os.remove(file_path)
+                    return
             
             try:
                 # Создаем красивое название файла только с названием трека
