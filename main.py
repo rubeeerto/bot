@@ -471,6 +471,22 @@ class MusicDownloader:
                         'preferredquality': '192',
                     }
                 ],
+                # Исправления для FFmpeg
+                'ffmpeg_location': None,  # Используем системный FFmpeg
+                'postprocessor_args': {
+                    'FFmpegExtractAudio': [
+                        '-acodec', 'mp3',
+                        '-ab', '192k',
+                        '-ar', '44100',
+                        '-ac', '2',
+                        '-avoid_negative_ts', 'make_zero',
+                        '-fflags', '+genpts',
+                        '-strict', '-2',  # Разрешаем экспериментальные кодеки
+                        '-max_muxing_queue_size', '1024'  # Увеличиваем буфер
+                    ]
+                },
+                'ignoreerrors': True,  # Игнорируем ошибки постобработки
+                'no_check_certificate': True,  # Отключаем проверку сертификатов
                 'prefer_ffmpeg': True,
                 'noprogress': True,
                 'noplaylist': True,
@@ -595,6 +611,21 @@ class MusicDownloader:
                         'no_warnings': True,
                         'ignoreerrors': True,
                         'extract_flat': True,
+                        # Исправления для FFmpeg
+                        'ffmpeg_location': None,
+                        'postprocessor_args': {
+                            'FFmpegExtractAudio': [
+                                '-acodec', 'mp3',
+                                '-ab', '192k',
+                                '-ar', '44100',
+                                '-ac', '2',
+                                '-avoid_negative_ts', 'make_zero',
+                                '-fflags', '+genpts',
+                                '-strict', '-2',
+                                '-max_muxing_queue_size', '1024'
+                            ]
+                        },
+                        'no_check_certificate': True,
                     }
                     
                     with yt_dlp.YoutubeDL(simple_ydl_opts) as ydl:
@@ -845,9 +876,12 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
             logger.info(f"Sending file: {file_path} (size: {file_size} bytes)")
             
             try:
-                # Отправляем файл
+                # Создаем красивое название файла только с названием трека
+                clean_track_name = clean_filename(track_info['name'])
+                
+                # Отправляем файл с кастомным именем
                 await message.answer_document(
-                    document=types.FSInputFile(file_path),
+                    document=types.FSInputFile(file_path, filename=f"{clean_track_name}.mp3"),
                     caption=f"🎵 {track_info['name']} - {track_info['artist']}\n"
                            f"⏱️ {track_info['duration_formatted']} | 📁 {format_file_size(file_size)}"
                 )

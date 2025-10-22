@@ -2031,6 +2031,22 @@ class EnhancedSoundCloudProvider:
                 'quiet': True,
                 'no_warnings': True,
                 'windowsfilenames': True,
+                # Исправления для FFmpeg
+                'ffmpeg_location': None,  # Используем системный FFmpeg
+                'postprocessor_args': {
+                    'FFmpegExtractAudio': [
+                        '-acodec', 'mp3',
+                        '-ab', '192k',
+                        '-ar', '44100',
+                        '-ac', '2',
+                        '-avoid_negative_ts', 'make_zero',
+                        '-fflags', '+genpts',
+                        '-strict', '-2',  # Разрешаем экспериментальные кодеки
+                        '-max_muxing_queue_size', '1024'  # Увеличиваем буфер
+                    ]
+                },
+                'ignoreerrors': True,  # Игнорируем ошибки постобработки
+                'no_check_certificate': True,  # Отключаем проверку сертификатов
             }
             
             import yt_dlp
@@ -2056,7 +2072,7 @@ class EnhancedSoundCloudProvider:
                     before_files = set(glob.glob("downloads/*"))
                     
                     # Ждем немного для завершения скачивания
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(2)
                     
                     # Получаем список файлов после скачивания
                     after_files = set(glob.glob("downloads/*"))
@@ -2066,25 +2082,28 @@ class EnhancedSoundCloudProvider:
                     logger.info(f"Enhanced SoundCloud: New files found: {new_files}")
                     
                     if new_files:
-                        # Берем первый новый файл
-                        new_file = list(new_files)[0]
-                        file_size = os.path.getsize(new_file)
-                        logger.info(f"Enhanced SoundCloud: Using new file {new_file} (size: {file_size} bytes)")
+                        # Сортируем файлы по времени создания (новые сначала)
+                        new_files_list = list(new_files)
+                        new_files_list.sort(key=lambda x: os.path.getctime(x), reverse=True)
                         
-                        # Проверяем, что файл не пустой
-                        if file_size > 0:
-                            return new_file
-                        else:
-                            logger.warning(f"Enhanced SoundCloud: File {new_file} is empty, trying next...")
-                            # Удаляем пустой файл и пробуем следующий
-                            os.remove(new_file)
-                            new_files.remove(new_file)
-                            if new_files:
-                                next_file = list(new_files)[0]
-                                next_size = os.path.getsize(next_file)
-                                if next_size > 0:
-                                    logger.info(f"Enhanced SoundCloud: Using next file {next_file} (size: {next_size} bytes)")
-                                    return next_file
+                        for new_file in new_files_list:
+                            try:
+                                file_size = os.path.getsize(new_file)
+                                logger.info(f"Enhanced SoundCloud: Checking file {new_file} (size: {file_size} bytes)")
+                                
+                                # Проверяем, что файл не пустой и это аудио файл
+                                if file_size > 1000:  # Минимум 1KB
+                                    # Проверяем расширение
+                                    if new_file.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav')):
+                                        logger.info(f"Enhanced SoundCloud: Using file {new_file} (size: {file_size} bytes)")
+                                        return new_file
+                                    else:
+                                        logger.info(f"Enhanced SoundCloud: Skipping non-audio file {new_file}")
+                                else:
+                                    logger.warning(f"Enhanced SoundCloud: File {new_file} is too small ({file_size} bytes)")
+                            except Exception as e:
+                                logger.error(f"Enhanced SoundCloud: Error checking file {new_file}: {e}")
+                                continue
                         
             return None
         except Exception as e:
