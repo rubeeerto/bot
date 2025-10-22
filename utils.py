@@ -60,8 +60,23 @@ class EnhancedSpotifyParser:
             except Exception as e:
                 logger.error(f"Error initializing Spotify client: {e}")
     
-    def extract_ids_from_url(self, url: str) -> Dict[str, Optional[str]]:
+    async def _resolve_short_url(self, url: str) -> str:
+        """Разрешает короткие ссылки Spotify"""
+        if 'spotify.link' in url or 'spoti.fi' in url:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, allow_redirects=True) as response:
+                        if response.status == 200:
+                            return str(response.url)
+            except Exception as e:
+                logger.error(f"Error resolving short URL: {e}")
+        return url
+
+    async def extract_ids_from_url(self, url: str) -> Dict[str, Optional[str]]:
         """Извлекает все возможные ID из ссылки Spotify"""
+        # Сначала разрешаем короткие ссылки
+        resolved_url = await self._resolve_short_url(url)
+        
         patterns = {
             'track': [
                 r'spotify:track:([a-zA-Z0-9]+)',
@@ -89,7 +104,7 @@ class EnhancedSpotifyParser:
         for content_type, pattern_list in patterns.items():
             result[content_type] = None
             for pattern in pattern_list:
-                match = re.search(pattern, url)
+                match = re.search(pattern, resolved_url)
                 if match:
                     result[content_type] = match.group(1)
                     break

@@ -494,19 +494,25 @@ class MusicDownloader:
                         'skip': ['dash', 'hls'],
                         'player_skip': ['webpage'],
                         'comment_sort': ['top'],
+                        'innertube_host': 'music.youtube.com',
+                        'innertube_key': 'AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30',
                     }
                 },
-                'retries': 10,
-                'fragment_retries': 10,
-                'retry_sleep': 5,
-                'sleep_interval': 2,
-                'max_sleep_interval': 10,
+                'retries': 5,
+                'fragment_retries': 5,
+                'retry_sleep': 3,
+                'sleep_interval': 1,
+                'max_sleep_interval': 5,
                 # Дополнительные настройки обхода
                 'geo_bypass': True,
                 'geo_bypass_country': 'US',
                 'cookiesfrombrowser': None,  # Отключаем cookies
                 'no_check_certificate': True,
                 'ignoreerrors': True,
+                # Отключаем аутентификацию
+                'username': None,
+                'password': None,
+                'netrc': False,
                 # Прокси (если доступны)
                 'proxy': None,  # Можно добавить прокси позже
             }
@@ -707,16 +713,16 @@ async def process_spotify_link(message: Message):
     """Обработчик ссылок Spotify"""
     text = message.text.strip()
     
-    if not spotify_parser.extract_ids_from_url(text):
-        await message.answer("❌ Пожалуйста, отправьте ссылку на трек или плейлист Spotify.")
-        return
-    
     # Отправляем сообщение о начале обработки
     processing_msg = await message.answer("🔄 Обрабатываю ссылку...")
     
     try:
-        # Извлекаем ID из ссылки
-        ids = spotify_parser.extract_ids_from_url(text)
+        # Извлекаем ID из ссылки (теперь асинхронно)
+        ids = await spotify_parser.extract_ids_from_url(text)
+        
+        if not any(ids.values()):
+            await processing_msg.edit_text("❌ Пожалуйста, отправьте ссылку на трек или плейлист Spotify.")
+            return
         
         if ids['track']:
             # Обрабатываем трек
@@ -982,11 +988,21 @@ async def main():
     logger.info(f"HTTP server started on port {port}")
     
     try:
-        # Запускаем Telegram бота
-        await dp.start_polling(bot)
+        # Запускаем Telegram бота с обработкой конфликтов
+        await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
     except Exception as e:
         logger.error(f"Bot startup error: {e}")
-        raise
+        # Если ошибка связана с конфликтом, ждем и перезапускаем
+        if "Conflict" in str(e) or "terminated by other getUpdates" in str(e):
+            logger.info("Detected Telegram conflict, waiting 10 seconds before retry...")
+            await asyncio.sleep(10)
+            try:
+                await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+            except Exception as retry_error:
+                logger.error(f"Retry failed: {retry_error}")
+                raise
+        else:
+            raise
 
 
 if __name__ == "__main__":
