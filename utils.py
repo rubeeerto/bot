@@ -321,17 +321,43 @@ class MusicSearchEngine:
 
 
 def clean_filename(filename: str) -> str:
-    """Очищает имя файла от недопустимых символов"""
+    """Очищает имя файла от недопустимых символов с поддержкой Unicode"""
+    import unicodedata
+    
+    # Нормализуем Unicode символы
+    filename = unicodedata.normalize('NFC', filename)
+    
     # Удаляем недопустимые символы для Windows
     invalid_chars = '<>:"/\\|?*'
     for char in invalid_chars:
         filename = filename.replace(char, '_')
     
-    # Ограничиваем длину имени файла
-    if len(filename) > 200:
-        filename = filename[:200]
+    # Удаляем управляющие символы
+    filename = ''.join(char for char in filename if unicodedata.category(char)[0] != 'C')
     
-    return filename.strip()
+    # Заменяем пробелы и табы на подчеркивания
+    filename = filename.replace(' ', '_').replace('\t', '_')
+    
+    # Удаляем множественные подчеркивания
+    while '__' in filename:
+        filename = filename.replace('__', '_')
+    
+    # Удаляем подчеркивания в начале и конце
+    filename = filename.strip('_')
+    
+    # Ограничиваем длину имени файла (учитываем Unicode)
+    if len(filename.encode('utf-8')) > 200:
+        # Обрезаем по байтам, а не по символам
+        filename = filename.encode('utf-8')[:200].decode('utf-8', errors='ignore')
+        # Убираем неполные символы в конце
+        while len(filename.encode('utf-8')) > 200:
+            filename = filename[:-1]
+    
+    # Если имя файла пустое, используем fallback
+    if not filename or filename == '_':
+        filename = 'track'
+    
+    return filename
 
 
 def format_file_size(size_bytes: int) -> str:
@@ -1880,8 +1906,11 @@ class EnhancedSoundCloudProvider:
     async def search_urls(self, query: str, limit: int = 10) -> List[str]:
         """Ищет URL треков на SoundCloud"""
         try:
+            # Правильно кодируем Unicode символы для URL
+            encoded_query = quote(query, safe='', encoding='utf-8')
+            
             # Используем API SoundCloud для поиска
-            search_url = f"https://api-v2.soundcloud.com/search/tracks?q={quote(query, safe='')}&limit={limit}&client_id=YOUR_CLIENT_ID"
+            search_url = f"https://api-v2.soundcloud.com/search/tracks?q={encoded_query}&limit={limit}&client_id=YOUR_CLIENT_ID"
             
             # Fallback на веб-поиск если API не работает
             try:
@@ -1894,7 +1923,7 @@ class EnhancedSoundCloudProvider:
                 pass
             
             # Веб-поиск как fallback
-            web_search_url = f"https://soundcloud.com/search/sounds?q={quote(query, safe='')}"
+            web_search_url = f"https://soundcloud.com/search/sounds?q={encoded_query}"
             async with self.session.get(web_search_url, timeout=15) as resp:
                 if resp.status != 200:
                     return []
