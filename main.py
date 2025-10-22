@@ -496,13 +496,15 @@ class MusicDownloader:
                         'comment_sort': ['top'],
                         'innertube_host': 'music.youtube.com',
                         'innertube_key': 'AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30',
+                        'api_key': 'AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30',
+                        'client_version': '2.20231219.01.00',
                     }
                 },
-                'retries': 5,
-                'fragment_retries': 5,
-                'retry_sleep': 3,
+                'retries': 3,
+                'fragment_retries': 3,
+                'retry_sleep': 2,
                 'sleep_interval': 1,
-                'max_sleep_interval': 5,
+                'max_sleep_interval': 3,
                 # Дополнительные настройки обхода
                 'geo_bypass': True,
                 'geo_bypass_country': 'US',
@@ -513,11 +515,18 @@ class MusicDownloader:
                 'username': None,
                 'password': None,
                 'netrc': False,
+                # Дополнительные настройки для обхода блокировок
+                'extract_flat': False,
+                'writethumbnail': False,
+                'writeinfojson': False,
+                'writesubtitles': False,
+                'writeautomaticsub': False,
                 # Прокси (если доступны)
                 'proxy': None,  # Можно добавить прокси позже
             }
             
             try:
+                import yt_dlp
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     logger.info("Provider: YouTube search")
                     # Ищем до 5 видео и выбираем наиболее подходящее
@@ -566,6 +575,51 @@ class MusicDownloader:
                 
             except Exception as e:
                 logger.error(f"YouTube search failed: {e}")
+                
+                # Пробуем альтернативный подход с более простыми настройками
+                try:
+                    logger.info("Provider: YouTube fallback")
+                    simple_ydl_opts = {
+                        'format': 'bestaudio/best',
+                        'outtmpl': f'downloads/%(title)s.%(ext)s',
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': '192',
+                        }],
+                        'noplaylist': True,
+                        'quiet': True,
+                        'no_warnings': True,
+                        'ignoreerrors': True,
+                        'extract_flat': True,
+                    }
+                    
+                    with yt_dlp.YoutubeDL(simple_ydl_opts) as ydl:
+                        search_results = ydl.extract_info(
+                            f"ytsearch3:{clean_query}",
+                            download=False
+                        )
+                        
+                        if search_results and 'entries' in search_results:
+                            entries = [e for e in search_results.get('entries', []) if e]
+                            if entries:
+                                best = entries[0]
+                                video_url = best.get('webpage_url') or best.get('url')
+                                if video_url:
+                                    # Скачиваем с простыми настройками
+                                    download_opts = simple_ydl_opts.copy()
+                                    download_opts['extract_flat'] = False
+                                    with yt_dlp.YoutubeDL(download_opts) as ydl_download:
+                                        ydl_download.download([video_url])
+                                    
+                                    title = best.get('title') or 'track'
+                                    filename = f"downloads/{clean_filename(title)}.mp3"
+                                    if os.path.exists(filename):
+                                        logger.info(f"YouTube fallback success: {filename}")
+                                        return filename
+                except Exception as fallback_error:
+                    logger.error(f"YouTube fallback also failed: {fallback_error}")
+                
                 # Не прерываем выполнение, продолжаем с другими провайдерами
                 return None
             
