@@ -1259,6 +1259,21 @@ class MusicDownloader:
                     clean_query.split('_')[0] if '_' in clean_query else clean_query,
                     # Пробуем только вторую часть названия
                     clean_query.split('_')[1] if '_' in clean_query and len(clean_query.split('_')) > 1 else clean_query,
+                    # Дополнительные варианты для треков с подчеркиваниями
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' official',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' lyrics',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' remix',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' cover',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' slowed',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' sped up',
+                    # Пробуем без знаков препинания
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().replace('.', '').replace('?', '').replace(':', ''),
+                    # Пробуем с разными разделителями
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().replace(' ', ' - '),
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().replace(' ', ' | '),
+                    # Пробуем только ключевые слова
+                    ' '.join(clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().split()[:3]),
+                    ' '.join(clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().split()[-3:]),
                 ]
                 
                 for variant in search_variants:
@@ -1331,6 +1346,20 @@ class MusicDownloader:
                     clean_query.replace('_', ' '),
                     clean_query.replace('_', ' ').replace(',', ' '),
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', ''),
+                    # Дополнительные варианты для SoundCloud
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip(),
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' music',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' song',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' track',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' beat',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' instrumental',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' remix',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' cover',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' slowed',
+                    clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' sped up',
+                    # Пробуем только ключевые слова
+                    ' '.join(clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().split()[:2]),
+                    ' '.join(clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().split()[-2:]),
                 ]
                 
                 for variant in search_variants:
@@ -2239,20 +2268,31 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
             if file_extension != '.mp3':
                 try:
                     logger.info(f"Converting {file_extension} to MP3...")
+                    
+                    # Проверяем размер файла - если слишком маленький, пропускаем конвертацию
+                    if file_size < 10000:  # Меньше 10KB - вероятно поврежденный файл
+                        logger.warning(f"File too small ({file_size} bytes), skipping conversion")
+                        await processing_msg.edit_text("❌ Файл слишком маленький или поврежден.")
+                        os.remove(file_path)
+                        return
+                    
                     import subprocess
                     import tempfile
                     
                     # Создаем временный файл для конвертации
                     mp3_path = file_path.replace(file_extension, '.mp3')
                     
-                    # Используем FFmpeg напрямую для конвертации
+                    # Используем FFmpeg напрямую для конвертации с дополнительными параметрами
                     ffmpeg_cmd = [
                         'ffmpeg',
+                        '-f', 'aac',  # Указываем формат явно
                         '-i', file_path,
                         '-acodec', 'mp3',
                         '-ab', '192k',
                         '-ar', '44100',
                         '-ac', '2',
+                        '-avoid_negative_ts', 'make_zero',
+                        '-fflags', '+genpts',
                         '-y',  # Перезаписываем файл если существует
                         mp3_path
                     ]
@@ -2260,53 +2300,49 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
                     result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=60)
                     
                     if result.returncode == 0 and os.path.exists(mp3_path):
-                        # Удаляем оригинальный файл
-                        os.remove(file_path)
-                        file_path = mp3_path
-                        logger.info(f"Successfully converted to MP3: {file_path}")
+                        # Проверяем размер нового файла
+                        new_size = os.path.getsize(mp3_path)
+                        if new_size > 1000:  # Новый файл должен быть больше 1KB
+                            # Удаляем оригинальный файл
+                            os.remove(file_path)
+                            file_path = mp3_path
+                            file_size = new_size
+                            logger.info(f"Successfully converted to MP3: {file_path} ({file_size} bytes)")
+                        else:
+                            logger.error(f"Converted file too small: {new_size} bytes")
+                            os.remove(mp3_path)
+                            raise Exception("Converted file too small")
                     else:
                         logger.error(f"FFmpeg conversion failed: {result.stderr}")
-                        # Пробуем yt-dlp как fallback
-                        import yt_dlp
-                        ydl_opts = {
-                            'format': 'bestaudio/best',
-                            'outtmpl': f'downloads/%(title)s.%(ext)s',
-                            'postprocessors': [{
-                                'key': 'FFmpegExtractAudio',
-                                'preferredcodec': 'mp3',
-                                'preferredquality': '192',
-                            }],
-                        'prefer_ffmpeg': True,
-                        'noprogress': True,
-                        'noplaylist': True,
-                        'quiet': True,
-                        'no_warnings': True,
-                        'windowsfilenames': True,
-                    }
-                    
-                    # Конвертируем файл
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        ydl.download([file_path])
-                    
-                    # Удаляем оригинальный файл
-                    os.remove(file_path)
-                    
-                    # Ищем новый MP3 файл
-                    mp3_file = file_path.replace(file_extension, '.mp3')
-                    if os.path.exists(mp3_file):
-                        file_path = mp3_file
-                        file_size = os.path.getsize(file_path)
-                        logger.info(f"Converted to MP3: {file_path} ({file_size} bytes)")
-                    else:
-                        logger.error("Failed to convert to MP3")
-                        await processing_msg.edit_text("❌ Не удалось конвертировать файл в MP3.")
-                        return
+                        # Если FFmpeg не смог конвертировать, пробуем отправить оригинальный файл
+                        raise Exception(f"FFmpeg failed: {result.stderr}")
                         
-                except Exception as e:
-                    logger.error(f"Conversion error: {e}")
-                    await processing_msg.edit_text("❌ Ошибка конвертации файла.")
-                    os.remove(file_path)
-                    return
+                except Exception as conversion_error:
+                    logger.error(f"Conversion error: {conversion_error}")
+                    # Если конвертация не удалась, пробуем отправить оригинальный файл
+                    logger.info(f"Trying to send original {file_extension} file...")
+                    if file_extension in ['.aac', '.m4a', '.ogg', '.wav']:
+                        # Отправляем оригинальный файл с правильным расширением
+                        try:
+                            clean_track_name = clean_filename(track_info['name'])
+                            await message.answer_document(
+                                document=types.FSInputFile(file_path, filename=f"{clean_track_name}{file_extension}"),
+                                caption=f"🎵 {track_info['name']} - {track_info['artist']}\n"
+                                       f"⏱️ {track_info['duration_formatted']} | 📁 {format_file_size(file_size)}"
+                            )
+                            os.remove(file_path)
+                            logger.info(f"Sent original {file_extension} file: {file_path}")
+                            await processing_msg.delete()
+                            return
+                        except Exception as send_error:
+                            logger.error(f"Failed to send original file: {send_error}")
+                            await processing_msg.edit_text("❌ Не удалось отправить файл.")
+                            os.remove(file_path)
+                            return
+                    else:
+                        await processing_msg.edit_text("❌ Не удалось конвертировать файл.")
+                        os.remove(file_path)
+                        return
             
             try:
                 # Создаем красивое название файла только с названием трека
