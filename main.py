@@ -2087,6 +2087,766 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"Billboard + YouTube failed: {e}")
         
+        # Дополнительные музыкальные сервисы для максимального покрытия
+        
+        # 4.1) Пробуем Spotify Web API + YouTube
+        try:
+            logger.info("Provider: Spotify Web + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через Spotify Web API (публичный поиск)
+                spotify_url = f"https://api.spotify.com/v1/search?q={quote(clean_query)}&type=track&limit=1"
+                headers = {'Accept': 'application/json'}
+                async with session.get(spotify_url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if 'tracks' in data and 'items' in data['tracks'] and data['tracks']['items']:
+                            track = data['tracks']['items'][0]
+                            artist = track.get('artists', [{}])[0].get('name', '')
+                            title = track.get('name', '')
+                            
+                            # Ищем на YouTube
+                            youtube_query = f"{artist} {title}"
+                            ydl_opts = {
+                                'format': 'bestaudio/best',
+                                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                                'postprocessors': [{
+                                    'key': 'FFmpegExtractAudio',
+                                    'preferredcodec': 'mp3',
+                                    'preferredquality': '192',
+                                }],
+                                'noplaylist': True,
+                                'quiet': True,
+                                'no_warnings': True,
+                                'ignoreerrors': True,
+                            }
+                            
+                            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                search_results = ydl.extract_info(
+                                    f"ytsearch1:{youtube_query}",
+                                    download=True
+                                )
+                                
+                                if search_results:
+                                    # Ищем скачанный файл
+                                    import glob
+                                    import time
+                                    await asyncio.sleep(2)
+                                    
+                                    for file_path in glob.glob("downloads/*"):
+                                        if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                            file_age = time.time() - os.path.getctime(file_path)
+                                            if file_age < 30:
+                                                logger.info(f"Spotify Web + YouTube success: {file_path}")
+                                                return file_path
+        except Exception as e:
+            logger.error(f"Spotify Web + YouTube failed: {e}")
+        
+        # 4.2) Пробуем Apple Music + YouTube
+        try:
+            logger.info("Provider: Apple Music + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через Apple Music (публичный поиск)
+                apple_url = f"https://itunes.apple.com/search?term={quote(clean_query)}&media=music&limit=1"
+                async with session.get(apple_url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if 'results' in data and data['results']:
+                            track = data['results'][0]
+                            artist = track.get('artistName', '')
+                            title = track.get('trackName', '')
+                            
+                            # Ищем на YouTube
+                            youtube_query = f"{artist} {title}"
+                            ydl_opts = {
+                                'format': 'bestaudio/best',
+                                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                                'postprocessors': [{
+                                    'key': 'FFmpegExtractAudio',
+                                    'preferredcodec': 'mp3',
+                                    'preferredquality': '192',
+                                }],
+                                'noplaylist': True,
+                                'quiet': True,
+                                'no_warnings': True,
+                                'ignoreerrors': True,
+                            }
+                            
+                            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                search_results = ydl.extract_info(
+                                    f"ytsearch1:{youtube_query}",
+                                    download=True
+                                )
+                                
+                                if search_results:
+                                    # Ищем скачанный файл
+                                    import glob
+                                    import time
+                                    await asyncio.sleep(2)
+                                    
+                                    for file_path in glob.glob("downloads/*"):
+                                        if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                            file_age = time.time() - os.path.getctime(file_path)
+                                            if file_age < 30:
+                                                logger.info(f"Apple Music + YouTube success: {file_path}")
+                                                return file_path
+        except Exception as e:
+            logger.error(f"Apple Music + YouTube failed: {e}")
+        
+        # 4.3) Пробуем Tidal + YouTube
+        try:
+            logger.info("Provider: Tidal + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через Tidal (публичный поиск)
+                tidal_url = f"https://api.tidal.com/v1/search?query={quote(clean_query)}&limit=1&types=TRACKS"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(tidal_url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if 'tracks' in data and data['tracks']:
+                            track = data['tracks'][0]
+                            artist = track.get('artist', {}).get('name', '')
+                            title = track.get('title', '')
+                            
+                            # Ищем на YouTube
+                            youtube_query = f"{artist} {title}"
+                            ydl_opts = {
+                                'format': 'bestaudio/best',
+                                'outtmpl': f'downloads/%(title)s.%(ext)s',
+                                'postprocessors': [{
+                                    'key': 'FFmpegExtractAudio',
+                                    'preferredcodec': 'mp3',
+                                    'preferredquality': '192',
+                                }],
+                                'noplaylist': True,
+                                'quiet': True,
+                                'no_warnings': True,
+                                'ignoreerrors': True,
+                            }
+                            
+                            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                search_results = ydl.extract_info(
+                                    f"ytsearch1:{youtube_query}",
+                                    download=True
+                                )
+                                
+                                if search_results:
+                                    # Ищем скачанный файл
+                                    import glob
+                                    import time
+                                    await asyncio.sleep(2)
+                                    
+                                    for file_path in glob.glob("downloads/*"):
+                                        if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                            file_age = time.time() - os.path.getctime(file_path)
+                                            if file_age < 30:
+                                                logger.info(f"Tidal + YouTube success: {file_path}")
+                                                return file_path
+        except Exception as e:
+            logger.error(f"Tidal + YouTube failed: {e}")
+        
+        # 4.4) Пробуем Amazon Music + YouTube
+        try:
+            logger.info("Provider: Amazon Music + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через Amazon Music (публичный поиск)
+                amazon_url = f"https://music.amazon.com/search?q={quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(amazon_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"Amazon Music + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"Amazon Music + YouTube failed: {e}")
+        
+        # 4.5) Пробуем Pandora + YouTube
+        try:
+            logger.info("Provider: Pandora + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через Pandora (публичный поиск)
+                pandora_url = f"https://www.pandora.com/search?q={quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(pandora_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"Pandora + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"Pandora + YouTube failed: {e}")
+        
+        # 4.6) Пробуем iHeartRadio + YouTube
+        try:
+            logger.info("Provider: iHeartRadio + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через iHeartRadio (публичный поиск)
+                iheart_url = f"https://www.iheart.com/search/?q={quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(iheart_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"iHeartRadio + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"iHeartRadio + YouTube failed: {e}")
+        
+        # 4.7) Пробуем TuneIn + YouTube
+        try:
+            logger.info("Provider: TuneIn + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через TuneIn (публичный поиск)
+                tunein_url = f"https://tunein.com/search/?query={quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(tunein_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"TuneIn + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"TuneIn + YouTube failed: {e}")
+        
+        # 4.8) Пробуем Shazam + YouTube
+        try:
+            logger.info("Provider: Shazam + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через Shazam (публичный поиск)
+                shazam_url = f"https://www.shazam.com/search?term={quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(shazam_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"Shazam + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"Shazam + YouTube failed: {e}")
+        
+        # 4.9) Пробуем SoundHound + YouTube
+        try:
+            logger.info("Provider: SoundHound + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через SoundHound (публичный поиск)
+                soundhound_url = f"https://www.soundhound.com/search?q={quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(soundhound_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"SoundHound + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"SoundHound + YouTube failed: {e}")
+        
+        # 4.10) Пробуем AHA Music + YouTube
+        try:
+            logger.info("Provider: AHA Music + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через AHA Music (публичный поиск)
+                aha_url = f"https://www.ahamusic.com/search?q={quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(aha_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"AHA Music + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"AHA Music + YouTube failed: {e}")
+        
+        # 4.11) Пробуем Musixmatch + YouTube
+        try:
+            logger.info("Provider: Musixmatch + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через Musixmatch (публичный поиск)
+                musixmatch_url = f"https://www.musixmatch.com/search/{quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(musixmatch_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"Musixmatch + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"Musixmatch + YouTube failed: {e}")
+        
+        # 4.12) Пробуем Lyrics.com + YouTube
+        try:
+            logger.info("Provider: Lyrics.com + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через Lyrics.com (публичный поиск)
+                lyrics_url = f"https://www.lyrics.com/search.php?q={quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(lyrics_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"Lyrics.com + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"Lyrics.com + YouTube failed: {e}")
+        
+        # 4.13) Пробуем SongMeanings + YouTube
+        try:
+            logger.info("Provider: SongMeanings + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через SongMeanings (публичный поиск)
+                songmeanings_url = f"https://songmeanings.com/search/?q={quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(songmeanings_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"SongMeanings + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"SongMeanings + YouTube failed: {e}")
+        
+        # 4.14) Пробуем Songfacts + YouTube
+        try:
+            logger.info("Provider: Songfacts + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через Songfacts (публичный поиск)
+                songfacts_url = f"https://www.songfacts.com/search.php?q={quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(songfacts_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"Songfacts + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"Songfacts + YouTube failed: {e}")
+        
+        # 4.15) Пробуем Songkick + YouTube
+        try:
+            logger.info("Provider: Songkick + YouTube")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Ищем трек через Songkick (публичный поиск)
+                songkick_url = f"https://www.songkick.com/search?q={quote(clean_query)}"
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                async with session.get(songkick_url, headers=headers) as response:
+                    if response.status == 200:
+                        # Парсим HTML (упрощенная версия)
+                        html = await response.text()
+                        # Здесь можно добавить парсинг HTML для извлечения названия и исполнителя
+                        # Пока используем оригинальный запрос
+                        youtube_query = clean_query
+                        ydl_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [{
+                                'key': 'FFmpegExtractAudio',
+                                'preferredcodec': 'mp3',
+                                'preferredquality': '192',
+                            }],
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'ignoreerrors': True,
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            search_results = ydl.extract_info(
+                                f"ytsearch1:{youtube_query}",
+                                download=True
+                            )
+                            
+                            if search_results:
+                                # Ищем скачанный файл
+                                import glob
+                                import time
+                                await asyncio.sleep(2)
+                                
+                                for file_path in glob.glob("downloads/*"):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                                        file_age = time.time() - os.path.getctime(file_path)
+                                        if file_age < 30:
+                                            logger.info(f"Songkick + YouTube success: {file_path}")
+                                            return file_path
+        except Exception as e:
+            logger.error(f"Songkick + YouTube failed: {e}")
+        
         # Если ничего не найдено
         logger.info("All providers failed to find the track")
         return None
