@@ -2060,7 +2060,7 @@ class EnhancedSoundCloudProvider:
                     logger.info(f"Enhanced SoundCloud: Downloaded '{title}', looking for file...")
                     
                     # Ищем файл в разных форматах
-                    for ext in ['mp3', 'webm', 'm4a', 'ogg', 'wav']:
+                    for ext in ['mp3', 'webm', 'm4a', 'ogg', 'wav', 'aac']:
                         file_path = f"downloads/{title}.{ext}"
                         if os.path.exists(file_path):
                             logger.info(f"Enhanced SoundCloud: Found file {file_path}")
@@ -2101,7 +2101,7 @@ class EnhancedSoundCloudProvider:
                                 
                                 # Если файл недавний (меньше 10 секунд) и не пустой
                                 if file_age < 10 and file_size > 1000:
-                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav')):
+                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
                                         logger.info(f"Enhanced SoundCloud: Using recent file {file_path}")
                                         return file_path
                             except Exception as e:
@@ -2121,7 +2121,7 @@ class EnhancedSoundCloudProvider:
                                 # Проверяем, что файл не пустой и это аудио файл
                                 if file_size > 1000:  # Минимум 1KB
                                     # Проверяем расширение
-                                    if new_file.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav')):
+                                    if new_file.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
                                         logger.info(f"Enhanced SoundCloud: Using file {new_file} (size: {file_size} bytes)")
                                         return new_file
                                     else:
@@ -2145,7 +2145,7 @@ class EnhancedSoundCloudProvider:
                         
                         # Ищем файлы, созданные в последние 30 секунд
                         if file_age < 30 and file_size > 1000:
-                            if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav')):
+                            if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
                                 logger.info(f"Enhanced SoundCloud: Fallback found file {file_path} (age: {file_age}s, size: {file_size})")
                                 return file_path
                     except Exception as e:
