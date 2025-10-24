@@ -76,141 +76,158 @@ class MusicDownloader:
             # Небольшая задержка между провайдерами
             await asyncio.sleep(0.5)
             
+            # 2) Пробуем с разными вариантами запроса для увеличения шансов найти трек
+            search_variants = [
+                clean_query,
+                clean_query.replace('_', ' '),
+                clean_query.replace(',', ' '),
+                clean_query.replace('.', ' '),
+                ' '.join(clean_query.split('_')[:3]),  # Первые 3 слова
+            ]
+            
+            # Убираем дубликаты
+            search_variants = list(dict.fromkeys(search_variants))
+            logger.info(f"Search variants: {search_variants}")
+            
             # 2) Пробуем улучшенный SoundCloud с фильтрацией версий
-            try:
-                logger.info("Provider: Enhanced SoundCloud")
-                async with EnhancedSoundCloudProvider() as sc:
-                    path = await sc.search_and_download_best(clean_query, track_info)
-                    logger.info(f"Enhanced SoundCloud returned path: {path}")
-                    if path:
-                        logger.info(f"Enhanced SoundCloud path exists: {os.path.exists(path)}")
-                        if os.path.exists(path):
-                            logger.info(f"Enhanced SoundCloud success: {path}")
-                            return path
+            for variant in search_variants:
+                try:
+                    logger.info(f"Provider: Enhanced SoundCloud (variant: '{variant}')")
+                    async with EnhancedSoundCloudProvider() as sc:
+                        path = await sc.search_and_download_best(variant, track_info)
+                        logger.info(f"Enhanced SoundCloud returned path: {path}")
+                        if path:
+                            logger.info(f"Enhanced SoundCloud path exists: {os.path.exists(path)}")
+                            if os.path.exists(path):
+                                logger.info(f"Enhanced SoundCloud success: {path}")
+                                return path
+                            else:
+                                logger.warning(f"Enhanced SoundCloud path does not exist: {path}")
                         else:
-                            logger.warning(f"Enhanced SoundCloud path does not exist: {path}")
-                    else:
-                        logger.warning("Enhanced SoundCloud returned None")
-            except Exception as e:
-                logger.error(f"Enhanced SoundCloud error: {e}")
+                            logger.warning("Enhanced SoundCloud returned None")
+                except Exception as e:
+                    logger.error(f"Enhanced SoundCloud error: {e}")
+                    continue
             
             await asyncio.sleep(0.3)
                 
             # 2.1) Пробуем обычный SoundCloud как fallback с фильтрацией
-            try:
-                logger.info("Provider: SoundCloud Fallback")
-                async with SoundCloudProvider() as sc:
-                    sc_urls = await sc.search_urls(clean_query, limit=5)
-                logger.info(f"SoundCloud candidates: {len(sc_urls)}")
-                if sc_urls:
-                    # Сначала анализируем кандидатов для фильтрации
-                    candidate_info = []
-                    for url in sc_urls:
-                        try:
-                            import yt_dlp
-                            ydl_info_opts = {
-                                'quiet': True,
-                                'no_warnings': True,
-                                'extract_flat': True,
-                            }
-                            with yt_dlp.YoutubeDL(ydl_info_opts) as ydl_info:
-                                info = ydl_info.extract_info(url, download=False)
-                                if info:
-                                    candidate_info.append({
-                                        'url': url,
-                                        'title': info.get('title', ''),
-                                        'duration': info.get('duration', 0),
-                                        'view_count': info.get('view_count', 0)
-                                    })
-                        except Exception:
-                            continue
+            for variant in search_variants:
+                try:
+                    logger.info(f"Provider: SoundCloud Fallback (variant: '{variant}')")
+                    async with SoundCloudProvider() as sc:
+                        sc_urls = await sc.search_urls(variant, limit=5)
+                    logger.info(f"SoundCloud candidates: {len(sc_urls)}")
+                    if sc_urls:
+                        # Сначала анализируем кандидатов для фильтрации
+                        candidate_info = []
+                        for url in sc_urls:
+                            try:
+                                import yt_dlp
+                                ydl_info_opts = {
+                                    'quiet': True,
+                                    'no_warnings': True,
+                                    'extract_flat': True,
+                                }
+                                with yt_dlp.YoutubeDL(ydl_info_opts) as ydl_info:
+                                    info = ydl_info.extract_info(url, download=False)
+                                    if info:
+                                        candidate_info.append({
+                                            'url': url,
+                                            'title': info.get('title', ''),
+                                            'duration': info.get('duration', 0),
+                                            'view_count': info.get('view_count', 0)
+                                        })
+                            except Exception:
+                                continue
                     
-                    # Фильтруем кандидатов
-                    filtered_candidates = ImprovedSearchEngine.filter_original_versions(candidate_info, track_info)
-                    
-                    if not filtered_candidates:
-                        logger.info("SoundCloud Fallback: No good candidates after filtering")
-                        # Если нет хороших кандидатов, пробуем первый без фильтрации
-                        filtered_candidates = candidate_info[:1]
-                    
-                    # Скачиваем лучшего кандидата
-                    best_candidate = filtered_candidates[0]
-                    logger.info(f"SoundCloud Fallback: Best candidate '{best_candidate['title']}'")
-                    
-                    ydl_sc_opts = {
-                        'format': 'bestaudio/best',
-                        'outtmpl': f'downloads/%(title)s.%(ext)s',
-                        'postprocessors': [
-                            {
-                                'key': 'FFmpegExtractAudio',
-                                'preferredcodec': 'mp3',
-                                'preferredquality': '192',
-                            }
-                        ],
-                        'prefer_ffmpeg': True,
-                        'noprogress': True,
-                        'noplaylist': True,
-                        'quiet': True,
-                        'no_warnings': True,
-                        'windowsfilenames': True,
-                        # Исправления для FFmpeg проблем
-                        'ffmpeg_location': None,  # Используем системный FFmpeg
-                        'postprocessor_args': {
-                            'FFmpegExtractAudio': [
-                                '-acodec', 'mp3',
-                                '-ab', '192k',
-                                '-ar', '44100',
-                                '-ac', '2',
-                                '-avoid_negative_ts', 'make_zero',
-                                '-fflags', '+genpts',
-                                '-strict', '-2',  # Разрешаем экспериментальные кодеки
-                                '-max_muxing_queue_size', '1024'  # Увеличиваем буфер
-                            ]
-                        },
-                        'ignoreerrors': True,  # Игнорируем ошибки постобработки
-                        'no_check_certificate': True,  # Отключаем проверку сертификатов
-                    }
-                    import yt_dlp as _yt
-                    with _yt.YoutubeDL(ydl_sc_opts) as ydl2:
-                        try:
-                            logger.info(f"SoundCloud try: {best_candidate['url']}")
-                            info = ydl2.extract_info(best_candidate['url'], download=True)
-                            title = info.get('title') or 'track'
-                            
-                            # Ищем скачанный файл в разных форматах
-                            base_name = clean_filename(title)
-                            for ext in ['mp3', 'webm', 'm4a', 'ogg', 'wav']:
-                                candidate = f"downloads/{base_name}.{ext}"
-                                if os.path.exists(candidate):
-                                    logger.info(f"SoundCloud success: {candidate}")
-                                    return candidate
-                            
-                            # Если MP3 не найден, но есть другие форматы, конвертируем
-                            for ext in ['webm', 'm4a', 'ogg', 'wav']:
-                                source_file = f"downloads/{base_name}.{ext}"
-                                if os.path.exists(source_file):
-                                    # Пробуем конвертировать в MP3
-                                    mp3_file = f"downloads/{base_name}.mp3"
-                                    try:
-                                        import subprocess
-                                        result = subprocess.run([
-                                            'ffmpeg', '-i', source_file, 
-                                            '-acodec', 'mp3', '-ab', '192k',
-                                            '-ar', '44100', '-ac', '2',
-                                            '-y', mp3_file
-                                        ], capture_output=True, timeout=30)
-                                        if result.returncode == 0 and os.path.exists(mp3_file):
-                                            logger.info(f"SoundCloud converted success: {mp3_file}")
-                                            return mp3_file
-                                    except Exception:
-                                        # Если конвертация не удалась, возвращаем исходный файл
-                                        logger.info(f"SoundCloud success (original): {source_file}")
-                                        return source_file
-                                        
-                        except Exception as e:
-                            logger.error(f"SoundCloud candidate failed: {e}")
-            except Exception:
-                logger.exception("SoundCloud provider error")
+                        # Фильтруем кандидатов
+                        filtered_candidates = ImprovedSearchEngine.filter_original_versions(candidate_info, track_info)
+                        
+                        if not filtered_candidates:
+                            logger.info("SoundCloud Fallback: No good candidates after filtering")
+                            # Если нет хороших кандидатов, пробуем первый без фильтрации
+                            filtered_candidates = candidate_info[:1]
+                        
+                        # Скачиваем лучшего кандидата
+                        best_candidate = filtered_candidates[0]
+                        logger.info(f"SoundCloud Fallback: Best candidate '{best_candidate['title']}'")
+                        
+                        ydl_sc_opts = {
+                            'format': 'bestaudio/best',
+                            'outtmpl': f'downloads/%(title)s.%(ext)s',
+                            'postprocessors': [
+                                {
+                                    'key': 'FFmpegExtractAudio',
+                                    'preferredcodec': 'mp3',
+                                    'preferredquality': '192',
+                                }
+                            ],
+                            'prefer_ffmpeg': True,
+                            'noprogress': True,
+                            'noplaylist': True,
+                            'quiet': True,
+                            'no_warnings': True,
+                            'windowsfilenames': True,
+                            # Исправления для FFmpeg проблем
+                            'ffmpeg_location': None,  # Используем системный FFmpeg
+                            'postprocessor_args': {
+                                'FFmpegExtractAudio': [
+                                    '-acodec', 'mp3',
+                                    '-ab', '192k',
+                                    '-ar', '44100',
+                                    '-ac', '2',
+                                    '-avoid_negative_ts', 'make_zero',
+                                    '-fflags', '+genpts',
+                                    '-strict', '-2',  # Разрешаем экспериментальные кодеки
+                                    '-max_muxing_queue_size', '1024'  # Увеличиваем буфер
+                                ]
+                            },
+                            'ignoreerrors': True,  # Игнорируем ошибки постобработки
+                            'no_check_certificate': True,  # Отключаем проверку сертификатов
+                        }
+                        import yt_dlp as _yt
+                        with _yt.YoutubeDL(ydl_sc_opts) as ydl2:
+                            try:
+                                logger.info(f"SoundCloud try: {best_candidate['url']}")
+                                info = ydl2.extract_info(best_candidate['url'], download=True)
+                                title = info.get('title') or 'track'
+                                
+                                # Ищем скачанный файл в разных форматах
+                                base_name = clean_filename(title)
+                                for ext in ['mp3', 'webm', 'm4a', 'ogg', 'wav']:
+                                    candidate = f"downloads/{base_name}.{ext}"
+                                    if os.path.exists(candidate):
+                                        logger.info(f"SoundCloud success: {candidate}")
+                                        return candidate
+                                
+                                # Если MP3 не найден, но есть другие форматы, конвертируем
+                                for ext in ['webm', 'm4a', 'ogg', 'wav']:
+                                    source_file = f"downloads/{base_name}.{ext}"
+                                    if os.path.exists(source_file):
+                                        # Пробуем конвертировать в MP3
+                                        mp3_file = f"downloads/{base_name}.mp3"
+                                        try:
+                                            import subprocess
+                                            result = subprocess.run([
+                                                'ffmpeg', '-i', source_file, 
+                                                '-acodec', 'mp3', '-ab', '192k',
+                                                '-ar', '44100', '-ac', '2',
+                                                '-y', mp3_file
+                                            ], capture_output=True, timeout=30)
+                                            if result.returncode == 0 and os.path.exists(mp3_file):
+                                                logger.info(f"SoundCloud converted success: {mp3_file}")
+                                                return mp3_file
+                                        except Exception:
+                                            # Если конвертация не удалась, возвращаем исходный файл
+                                            logger.info(f"SoundCloud success (original): {source_file}")
+                                            return source_file
+                                            
+                            except Exception as e:
+                                logger.error(f"SoundCloud candidate failed: {e}")
+                except Exception:
+                    logger.exception("SoundCloud provider error")
+                    continue
             
             await asyncio.sleep(0.4)
             
