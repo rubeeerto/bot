@@ -2540,7 +2540,7 @@ async def main():
                 logger.error(f"Retry failed: {retry_error}")
                 raise
         else:
-        raise
+            raise
 
 
 if __name__ == "__main__":
