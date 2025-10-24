@@ -2313,17 +2313,17 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
                 clean_track_name = clean_filename(track_info['name'])
                 
                 # Отправляем файл с кастомным именем
-            await message.answer_document(
+                await message.answer_document(
                     document=types.FSInputFile(file_path, filename=f"{clean_track_name}.mp3"),
-                caption=f"🎵 {track_info['name']} - {track_info['artist']}\n"
-                       f"⏱️ {track_info['duration_formatted']} | 📁 {format_file_size(file_size)}"
-            )
-            
-            # Удаляем временный файл
-            os.remove(file_path)
+                    caption=f"🎵 {track_info['name']} - {track_info['artist']}\n"
+                           f"⏱️ {track_info['duration_formatted']} | 📁 {format_file_size(file_size)}"
+                )
+                
+                # Удаляем временный файл
+                os.remove(file_path)
                 logger.info(f"File sent successfully and removed: {file_path}")
-            
-            await processing_msg.delete()
+                
+                await processing_msg.delete()
             except Exception as send_error:
                 logger.error(f"Error sending file: {send_error}")
                 await processing_msg.edit_text(f"❌ Ошибка отправки файла: {send_error}")
