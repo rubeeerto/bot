@@ -2258,24 +2258,21 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
             file_extension = os.path.splitext(file_path)[1].lower()
             logger.info(f"File extension: {file_extension}")
             
-            if file_extension not in ['.mp3', '.m4a', '.aac', '.ogg', '.wav']:
+            if file_extension not in ['.mp3', '.m4a', '.aac', '.ogg', '.wav', '.webm']:
                 logger.error(f"Unsupported file format: {file_extension}")
                 await processing_msg.edit_text("❌ Неподдерживаемый формат файла.")
                 os.remove(file_path)
                 return
             
-            # Если файл не в формате MP3, конвертируем его
-            if file_extension != '.mp3':
-                try:
-                    logger.info(f"Converting {file_extension} to MP3...")
-                    
-                    # Проверяем размер файла - если слишком маленький, пропускаем конвертацию
-                    if file_size < 10000:  # Меньше 10KB - вероятно поврежденный файл
-                        logger.warning(f"File too small ({file_size} bytes), skipping conversion")
-                        await processing_msg.edit_text("❌ Файл слишком маленький или поврежден.")
-                        os.remove(file_path)
-                        return
-                    
+            # ВСЕГДА конвертируем в MP3, даже если файл уже в MP3 (для унификации)
+            try:
+                # Проверяем размер файла - если слишком маленький, пропускаем конвертацию
+                if file_size < 10000:  # Меньше 10KB - вероятно поврежденный файл
+                    logger.warning(f"File too small ({file_size} bytes), skipping conversion")
+                    await processing_msg.edit_text("❌ Файл слишком маленький или поврежден.")
+                    os.remove(file_path)
+                    return
+                else:
                     import subprocess
                     import tempfile
                     
@@ -2317,38 +2314,19 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
                         # Если FFmpeg не смог конвертировать, пробуем отправить оригинальный файл
                         raise Exception(f"FFmpeg failed: {result.stderr}")
                         
-                except Exception as conversion_error:
-                    logger.error(f"Conversion error: {conversion_error}")
-                    # Если конвертация не удалась, пробуем отправить оригинальный файл
-                    logger.info(f"Trying to send original {file_extension} file...")
-                    if file_extension in ['.aac', '.m4a', '.ogg', '.wav']:
-                        # Отправляем оригинальный файл с правильным расширением
-                        try:
-                            clean_track_name = clean_filename(track_info['name'])
-                            await message.answer_document(
-                                document=types.FSInputFile(file_path, filename=f"{clean_track_name}{file_extension}"),
-                                caption=f"🎵 {track_info['name']} - {track_info['artist']}\n"
-                                       f"⏱️ {track_info['duration_formatted']} | 📁 {format_file_size(file_size)}"
-                            )
-                            os.remove(file_path)
-                            logger.info(f"Sent original {file_extension} file: {file_path}")
-                            await processing_msg.delete()
-                            return
-                        except Exception as send_error:
-                            logger.error(f"Failed to send original file: {send_error}")
-                            await processing_msg.edit_text("❌ Не удалось отправить файл.")
-                            os.remove(file_path)
-                            return
-                    else:
-                        await processing_msg.edit_text("❌ Не удалось конвертировать файл.")
-                        os.remove(file_path)
-                        return
+            except Exception as conversion_error:
+                logger.error(f"Conversion error: {conversion_error}")
+                # Если конвертация не удалась, удаляем файл и сообщаем об ошибке
+                await processing_msg.edit_text("❌ Не удалось конвертировать файл в MP3.")
+                os.remove(file_path)
+                return
             
+            # Отправляем файл (теперь он всегда в MP3 формате)
             try:
                 # Создаем красивое название файла только с названием трека
                 clean_track_name = clean_filename(track_info['name'])
                 
-                # Отправляем файл с кастомным именем
+                # Отправляем файл с кастомным именем (всегда .mp3)
                 await message.answer_document(
                     document=types.FSInputFile(file_path, filename=f"{clean_track_name}.mp3"),
                     caption=f"🎵 {track_info['name']} - {track_info['artist']}\n"
@@ -2357,7 +2335,7 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
                 
                 # Удаляем временный файл
                 os.remove(file_path)
-                logger.info(f"File sent successfully and removed: {file_path}")
+                logger.info(f"MP3 file sent successfully and removed: {file_path}")
                 
                 await processing_msg.delete()
             except Exception as send_error:

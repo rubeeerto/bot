@@ -2023,7 +2023,7 @@ class EnhancedSoundCloudProvider:
             os.makedirs("downloads", exist_ok=True)
             logger.info(f"Enhanced SoundCloud: Downloads directory ready")
             ydl_opts = {
-                'format': 'bestaudio/best',
+                'format': 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[ext=webm]/bestaudio/best',
                 'outtmpl': f'downloads/%(title)s.%(ext)s',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
@@ -2050,6 +2050,9 @@ class EnhancedSoundCloudProvider:
                 },
                 'ignoreerrors': True,  # Игнорируем ошибки постобработки
                 'no_check_certificate': True,  # Отключаем проверку сертификатов
+                # Принудительно конвертируем в MP3
+                'prefer_ffmpeg': True,
+                'keepvideo': False,
             }
             
             import yt_dlp
@@ -2059,12 +2062,18 @@ class EnhancedSoundCloudProvider:
                     title = clean_filename(info.get('title', 'track'))
                     logger.info(f"Enhanced SoundCloud: Downloaded '{title}', looking for file...")
                     
-                    # Ищем файл в разных форматах
-                    for ext in ['mp3', 'webm', 'm4a', 'ogg', 'wav', 'aac']:
+                    # Ищем файл в разных форматах (приоритет MP3)
+                    for ext in ['mp3', 'webm', 'm4a', 'ogg', 'wav']:
                         file_path = f"downloads/{title}.{ext}"
                         if os.path.exists(file_path):
                             logger.info(f"Enhanced SoundCloud: Found file {file_path}")
                             return file_path
+                    
+                    # Если не нашли MP3, ищем AAC как последний вариант
+                    aac_path = f"downloads/{title}.aac"
+                    if os.path.exists(aac_path):
+                        logger.info(f"Enhanced SoundCloud: Found AAC file {aac_path}, will convert to MP3")
+                        return aac_path
                     
                     # Если не нашли по точному названию, ищем все файлы в downloads
                     logger.info("Enhanced SoundCloud: Searching for any new files in downloads/")
@@ -2101,8 +2110,15 @@ class EnhancedSoundCloudProvider:
                                 
                                 # Если файл недавний (меньше 10 секунд) и не пустой
                                 if file_age < 10 and file_size > 1000:
-                                    if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
-                                        logger.info(f"Enhanced SoundCloud: Using recent file {file_path}")
+                                    # Приоритет MP3 файлам
+                                    if file_path.lower().endswith('.mp3'):
+                                        logger.info(f"Enhanced SoundCloud: Using MP3 file {file_path}")
+                                        return file_path
+                                    elif file_path.lower().endswith(('.webm', '.m4a', '.ogg', '.wav')):
+                                        logger.info(f"Enhanced SoundCloud: Using audio file {file_path}")
+                                        return file_path
+                                    elif file_path.lower().endswith('.aac'):
+                                        logger.info(f"Enhanced SoundCloud: Using AAC file {file_path} (will convert)")
                                         return file_path
                             except Exception as e:
                                 logger.error(f"Enhanced SoundCloud: Error checking file {file_path}: {e}")
@@ -2120,9 +2136,15 @@ class EnhancedSoundCloudProvider:
                                 
                                 # Проверяем, что файл не пустой и это аудио файл
                                 if file_size > 1000:  # Минимум 1KB
-                                    # Проверяем расширение
-                                    if new_file.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
-                                        logger.info(f"Enhanced SoundCloud: Using file {new_file} (size: {file_size} bytes)")
+                                    # Приоритет MP3 файлам
+                                    if new_file.lower().endswith('.mp3'):
+                                        logger.info(f"Enhanced SoundCloud: Using MP3 file {new_file} (size: {file_size} bytes)")
+                                        return new_file
+                                    elif new_file.lower().endswith(('.webm', '.m4a', '.ogg', '.wav')):
+                                        logger.info(f"Enhanced SoundCloud: Using audio file {new_file} (size: {file_size} bytes)")
+                                        return new_file
+                                    elif new_file.lower().endswith('.aac'):
+                                        logger.info(f"Enhanced SoundCloud: Using AAC file {new_file} (size: {file_size} bytes, will convert)")
                                         return new_file
                                     else:
                                         logger.info(f"Enhanced SoundCloud: Skipping non-audio file {new_file}")
@@ -2145,8 +2167,15 @@ class EnhancedSoundCloudProvider:
                         
                         # Ищем файлы, созданные в последние 30 секунд
                         if file_age < 30 and file_size > 1000:
-                            if file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
-                                logger.info(f"Enhanced SoundCloud: Fallback found file {file_path} (age: {file_age}s, size: {file_size})")
+                            # Приоритет MP3 файлам
+                            if file_path.lower().endswith('.mp3'):
+                                logger.info(f"Enhanced SoundCloud: Fallback found MP3 file {file_path} (age: {file_age}s, size: {file_size})")
+                                return file_path
+                            elif file_path.lower().endswith(('.webm', '.m4a', '.ogg', '.wav')):
+                                logger.info(f"Enhanced SoundCloud: Fallback found audio file {file_path} (age: {file_age}s, size: {file_size})")
+                                return file_path
+                            elif file_path.lower().endswith('.aac'):
+                                logger.info(f"Enhanced SoundCloud: Fallback found AAC file {file_path} (age: {file_age}s, size: {file_size}, will convert)")
                                 return file_path
                     except Exception as e:
                         logger.error(f"Enhanced SoundCloud: Error in fallback check {file_path}: {e}")
