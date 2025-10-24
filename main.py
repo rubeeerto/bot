@@ -4,10 +4,6 @@ import os
 import re
 import time
 from typing import List, Optional, Tuple
-
-import asyncpg
-import asyncio
-
 import aiohttp
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -19,15 +15,6 @@ from aiohttp import web
 
 from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider, VKMusicProvider, YandexMusicProvider, DeezerProvider, AudiomackProvider, MusopenProvider, PleerNetProvider, MP3JuicesProvider, ZaycevProvider, MyzukaProvider, RuTrackProvider, RedMp3Provider, Mp3SkullsProvider, Music7sProvider, Mp3DownloadProvider, Beemp3sProvider, VkMusicFunProvider, ImprovedSearchEngine, EnhancedSoundCloudProvider
 
-
-
-async def main():
-    conn = await asyncpg.connect("postgresql://postgres:MppPCJrvBTeobJDWcFYnBVHISFBEcfxN@postgres.railway.internal:5432/railway")
-    await conn.execute("SELECT 1;")
-    print("Подключение успешно")
-    await conn.close()
-
-asyncio.run(main())
 
 
 
