@@ -81,9 +81,16 @@ class MusicDownloader:
                 logger.info("Provider: Enhanced SoundCloud")
                 async with EnhancedSoundCloudProvider() as sc:
                     path = await sc.search_and_download_best(clean_query, track_info)
-                    if path and os.path.exists(path):
-                        logger.info(f"Enhanced SoundCloud success: {path}")
-                        return path
+                    logger.info(f"Enhanced SoundCloud returned path: {path}")
+                    if path:
+                        logger.info(f"Enhanced SoundCloud path exists: {os.path.exists(path)}")
+                        if os.path.exists(path):
+                            logger.info(f"Enhanced SoundCloud success: {path}")
+                            return path
+                        else:
+                            logger.warning(f"Enhanced SoundCloud path does not exist: {path}")
+                    else:
+                        logger.warning("Enhanced SoundCloud returned None")
             except Exception as e:
                 logger.error(f"Enhanced SoundCloud error: {e}")
             
@@ -3008,6 +3015,11 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
             logger.info(f"File exists: {os.path.exists(file_path)}")
             if os.path.exists(file_path):
                 logger.info(f"File size: {os.path.getsize(file_path)} bytes")
+                logger.info(f"File path resolved: {os.path.abspath(file_path)}")
+            else:
+                logger.error(f"File does not exist at path: {file_path}")
+        else:
+            logger.error("No file path returned from downloader")
         
         if file_path and os.path.exists(file_path):
             # Получаем размер файла
