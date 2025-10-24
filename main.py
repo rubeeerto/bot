@@ -4,8 +4,8 @@ import os
 import re
 import time
 from typing import List, Optional, Tuple
-import os
-import psycopg2
+#import os
+#import psycopg2
 
 
 import aiohttp
@@ -18,7 +18,7 @@ import shutil
 from aiohttp import web
 
 from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider, VKMusicProvider, YandexMusicProvider, DeezerProvider, AudiomackProvider, MusopenProvider, PleerNetProvider, MP3JuicesProvider, ZaycevProvider, MyzukaProvider, RuTrackProvider, RedMp3Provider, Mp3SkullsProvider, Music7sProvider, Mp3DownloadProvider, Beemp3sProvider, VkMusicFunProvider, ImprovedSearchEngine, EnhancedSoundCloudProvider
-conn = psycopg2.connect("postgresql://postgres:MppPCJrvBTeobJDWcFYnBVHISFBEcfxN@postgres.railway.internal:5432/railway")
+#conn = psycopg2.connect("postgresql://postgres:MppPCJrvBTeobJDWcFYnBVHISFBEcfxN@postgres.railway.internal:5432/railway")
 
 # Загружаем переменные окружения
 load_dotenv()
