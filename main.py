@@ -31,40 +31,40 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-# Проверка наличия ffmpeg
+# Перевірка наявності ffmpeg
 def is_ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
 
-# Инициализация бота
+# Ініціалізація бота
 bot = Bot(token=os.getenv('TELEGRAM_TOKEN'))
 dp = Dispatcher()
 
-# Семафор для ограничения одновременных загрузок (максимум 3 одновременно)
+# Семафор для обмеження одночасних завантажень (максимум 3 одночасно)
 download_semaphore = asyncio.Semaphore(3)
 
-# Счетчик активных загрузок
+# Лічильник активних завантажень
 active_downloads = 0
 
-# Инициализация Spotify API
+# Ініціалізація Spotify API
 spotify_client_id = os.getenv('SPOTIFY_CLIENT_ID')
 spotify_client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
 
-# Создаем экземпляр парсера Spotify
+# Створюємо екземпляр парсера Spotify
 spotify_parser = EnhancedSpotifyParser(spotify_client_id, spotify_client_secret)
 
 
 class MusicDownloader:
-    """Класс для поиска и скачивания музыки"""
+    """Клас для пошуку та завантаження музики"""
     
     @staticmethod
     async def search_and_download(query: str, track_info: dict = None) -> Optional[str]:
-        """Ищет и скачивает музыку по запросу"""
+        """Шукає та завантажує музику за запитом"""
         try:
-            # Очищаем запрос от недопустимых символов
+            # Очищаємо запит від неприпустимих символів
             clean_query = clean_filename(query)
             logger.info(f"Download start. Query='{clean_query}'")
             
-            # 1) Пробуем онлайн провайдера (JioSaavn)
+            # 1) Пробуємо онлайн провайдера (JioSaavn)
             try:
                 logger.info("Provider: JioSaavn")
                 async with JioSaavnProvider() as provider:
@@ -75,10 +75,10 @@ class MusicDownloader:
             except Exception as _:
                 logger.exception("JioSaavn error")
             
-            # Небольшая задержка между провайдерами
+            # Невелика затримка між провайдерами
             await asyncio.sleep(0.5)
             
-            # 2) Пробуем с разными вариантами запроса для увеличения шансов найти трек
+            # 2) Пробуємо з різними варіантами запиту для збільшення шансів знайти трек
             search_variants = [
                 clean_query,
                 clean_query.replace('_', ' '),
@@ -87,11 +87,11 @@ class MusicDownloader:
                 ' '.join(clean_query.split('_')[:3]),  # Первые 3 слова
             ]
             
-            # Убираем дубликаты
+            # Прибираємо дублікати
             search_variants = list(dict.fromkeys(search_variants))
             logger.info(f"Search variants: {search_variants}")
             
-            # 2) Пробуем улучшенный SoundCloud с фильтрацией версий
+            # 2) Пробуємо покращений SoundCloud з фільтрацією версій
             for variant in search_variants:
                 try:
                     logger.info(f"Provider: Enhanced SoundCloud (variant: '{variant}')")
@@ -113,7 +113,7 @@ class MusicDownloader:
             
             await asyncio.sleep(0.3)
                 
-            # 2.1) Пробуем обычный SoundCloud как fallback с фильтрацией
+            # 2.1) Пробуємо звичайний SoundCloud як fallback з фільтрацією
             for variant in search_variants:
                 try:
                     logger.info(f"Provider: SoundCloud Fallback (variant: '{variant}')")
@@ -143,15 +143,15 @@ class MusicDownloader:
                             except Exception:
                                 continue
                     
-                        # Фильтруем кандидатов
+                        # Фільтруємо кандидатів
                         filtered_candidates = ImprovedSearchEngine.filter_original_versions(candidate_info, track_info)
                         
                         if not filtered_candidates:
                             logger.info("SoundCloud Fallback: No good candidates after filtering")
-                            # Если нет хороших кандидатов, пробуем первый без фильтрации
+                            # Якщо немає хороших кандидатів, пробуємо перший без фільтрації
                             filtered_candidates = candidate_info[:1]
                         
-                        # Скачиваем лучшего кандидата
+                        # Завантажуємо найкращого кандидата
                         best_candidate = filtered_candidates[0]
                         logger.info(f"SoundCloud Fallback: Best candidate '{best_candidate['title']}'")
                         
@@ -203,11 +203,11 @@ class MusicDownloader:
                                         logger.info(f"SoundCloud success: {candidate}")
                                         return candidate
                                 
-                                # Если MP3 не найден, но есть другие форматы, конвертируем
+                                # Якщо MP3 не знайдено, але є інші формати, конвертуємо
                                 for ext in ['webm', 'm4a', 'ogg', 'wav']:
                                     source_file = f"downloads/{base_name}.{ext}"
                                     if os.path.exists(source_file):
-                                        # Пробуем конвертировать в MP3
+                                        # Пробуємо конвертувати в MP3
                                         mp3_file = f"downloads/{base_name}.mp3"
                                         try:
                                             import subprocess
@@ -221,7 +221,7 @@ class MusicDownloader:
                                                 logger.info(f"SoundCloud converted success: {mp3_file}")
                                                 return mp3_file
                                         except Exception:
-                                            # Если конвертация не удалась, возвращаем исходный файл
+                                            # Якщо конвертація не вдалася, повертаємо вихідний файл
                                             logger.info(f"SoundCloud success (original): {source_file}")
                                             return source_file
                                             
@@ -233,7 +233,7 @@ class MusicDownloader:
             
             await asyncio.sleep(0.4)
             
-            # 2.5) Пробуем альтернативный провайдер (Last.fm + другие источники)
+            # 2.5) Пробуємо альтернативний провайдер (Last.fm + інші джерела)
             try:
                 logger.info("Provider: AlternativeMusic")
                 async with AlternativeMusicProvider() as alt_provider:
@@ -244,7 +244,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"AlternativeMusic error: {e}")
 
-            # 2.5A) Пробуем Pleer.net
+            # 2.5A) Пробуємо Pleer.net
             try:
                 logger.info("Provider: PleerNet")
                 async with PleerNetProvider() as pleer_provider:
@@ -256,7 +256,7 @@ class MusicDownloader:
                 logger.error(f"PleerNet error: {e}")
             
             await asyncio.sleep(0.2)
-            # 2.5B) Пробуем MP3Juices
+            # 2.5B) Пробуємо MP3Juices
             try:
                 logger.info("Provider: MP3Juices")
                 async with MP3JuicesProvider() as mp3j_provider:
@@ -268,7 +268,7 @@ class MusicDownloader:
                 logger.error(f"MP3Juices error: {e}")
             
             await asyncio.sleep(0.2)
-            # 2.5C) Пробуем Zaycev.net
+            # 2.5C) Пробуємо Zaycev.net
             try:
                 logger.info("Provider: Zaycev.net")
                 async with ZaycevProvider() as zaycev_provider:
@@ -279,7 +279,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"ZaycevProvider error: {e}")
             
-            # 2.5D) Пробуем Myzuka.fm
+            # 2.5D) Пробуємо Myzuka.fm
             try:
                 logger.info("Provider: Myzuka.fm")
                 async with MyzukaProvider() as myzuka_provider:
@@ -289,8 +289,8 @@ class MusicDownloader:
                         return path
             except Exception as e:
                 logger.error(f"MyzukaProvider error: {e}")
-                # Продолжаем работу, не прерываем выполнение
-            # 2.5E) Пробуем rutracker.org (выдаём публичную ссылку, если найден торрент)
+                # Продовжуємо роботу, не перериваємо виконання
+            # 2.5E) Пробуємо rutracker.org (видаємо публічне посилання, якщо знайдено торрент)
             try:
                 logger.info("Provider: RuTracker")
                 async with RuTrackProvider() as rutr_provider:
@@ -301,7 +301,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"RuTrackProvider error: {e}")
             
-            # 2.6) Пробуем Bandcamp
+            # 2.6) Пробуємо Bandcamp
             try:
                 logger.info("Provider: Bandcamp")
                 async with BandcampProvider() as bc_provider:
@@ -312,7 +312,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Bandcamp error: {e}")
             
-            # 2.7) Пробуем Internet Archive
+            # 2.7) Пробуємо Internet Archive
             try:
                 logger.info("Provider: Archive.org")
                 async with ArchiveOrgProvider() as arch_provider:
@@ -323,7 +323,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Archive.org error: {e}")
             
-            # 2.8) Пробуем Free Music Archive
+            # 2.8) Пробуємо Free Music Archive
             try:
                 logger.info("Provider: Free Music Archive")
                 async with FreeMusicArchiveProvider() as fma_provider:
@@ -334,7 +334,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Free Music Archive error: {e}")
             
-            # 2.9) Пробуем Jamendo
+            # 2.9) Пробуємо Jamendo
             try:
                 logger.info("Provider: Jamendo")
                 async with JamendoProvider() as jam_provider:
@@ -345,7 +345,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Jamendo error: {e}")
             
-            # 2.10) Пробуем Mixcloud
+            # 2.10) Пробуємо Mixcloud
             try:
                 logger.info("Provider: Mixcloud")
                 async with MixcloudProvider() as mix_provider:
@@ -356,7 +356,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Mixcloud error: {e}")
             
-            # 2.11) Пробуем VK Music
+            # 2.11) Пробуємо VK Music
             try:
                 logger.info("Provider: VK Music")
                 async with VKMusicProvider() as vk_provider:
@@ -367,7 +367,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"VK Music error: {e}")
             
-            # 2.12) Пробуем Яндекс.Музыка
+            # 2.12) Пробуємо Яндекс.Музика
             try:
                 logger.info("Provider: Yandex Music")
                 async with YandexMusicProvider() as yandex_provider:
@@ -378,7 +378,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Yandex Music error: {e}")
             
-            # 2.13) Пробуем Deezer
+            # 2.13) Пробуємо Deezer
             try:
                 logger.info("Provider: Deezer")
                 async with DeezerProvider() as deezer_provider:
@@ -389,7 +389,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Deezer error: {e}")
             
-            # 2.14) Пробуем Audiomack
+            # 2.14) Пробуємо Audiomack
             try:
                 logger.info("Provider: Audiomack")
                 async with AudiomackProvider() as audiomack_provider:
@@ -400,7 +400,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Audiomack error: {e}")
 
-            # 2.15) Пробуем Musopen
+            # 2.15) Пробуємо Musopen
             try:
                 logger.info("Provider: Musopen")
                 async with MusopenProvider() as musopen_provider:
@@ -411,7 +411,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Musopen error: {e}")
             
-            # 2.16) Пробуем альтернативный YouTube провайдер
+            # 2.16) Пробуємо альтернативний YouTube провайдер
             try:
                 logger.info("Provider: AlternativeYouTube")
                 alt_yt_provider = AlternativeYouTubeProvider()
@@ -422,7 +422,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"AlternativeYouTube error: {e}")
             
-            # 2.17) Пробуем YouTube Music: ищем песни и качаем лучшего кандидата через yt-dlp
+            # 2.17) Пробуємо YouTube Music: шукаємо пісні та завантажуємо найкращого кандидата через yt-dlp
             try:
                 ytm = YTMusicProvider()
                 ytm_candidates = ytm.search(clean_query, limit=7)
@@ -618,7 +618,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"YouTube search failed: {e}")
                 
-                # Пробуем альтернативный подход с более простыми настройками
+                # Пробуємо альтернативний підхід з більш простими налаштуваннями
                 try:
                     logger.info("Provider: YouTube fallback")
                     simple_ydl_opts = {
@@ -714,7 +714,7 @@ class MusicDownloader:
                 # Не прерываем выполнение, продолжаем с другими провайдерами
                 return None
             
-            # 2.5F) Пробуем RedMp3
+            # 2.5F) Пробуємо RedMp3
             try:
                 logger.info("Provider: RedMp3")
                 async with RedMp3Provider() as redmp3:
@@ -724,7 +724,7 @@ class MusicDownloader:
                         return path
             except Exception as e:
                 logger.error(f"RedMp3Provider error: {e}")
-            # 2.5G) Пробуем Mp3Skulls
+            # 2.5G) Пробуємо Mp3Skulls
             try:
                 logger.info("Provider: Mp3Skulls")
                 async with Mp3SkullsProvider() as skulls:
@@ -734,7 +734,7 @@ class MusicDownloader:
                         return path
             except Exception as e:
                 logger.error(f"Mp3SkullsProvider error: {e}")
-            # 2.5I) Пробуем Mp3Download.to
+            # 2.5I) Пробуємо Mp3Download.to
             try:
                 logger.info("Provider: Mp3Download.to")
                 async with Mp3DownloadProvider() as mp3dl:
@@ -744,7 +744,7 @@ class MusicDownloader:
                         return path
             except Exception as e:
                 logger.error(f"Mp3DownloadProvider error: {e}")
-            # 2.5J) Пробуем Beemp3s.net
+            # 2.5J) Пробуємо Beemp3s.net
             try:
                 logger.info("Provider: Beemp3s.net")
                 async with Beemp3sProvider() as beemp3s:
@@ -754,7 +754,7 @@ class MusicDownloader:
                         return path
             except Exception as e:
                 logger.error(f"Beemp3sProvider error: {e}")
-            # 2.5K) Пробуем VkMusic.fun
+            # 2.5K) Пробуємо VkMusic.fun
             try:
                 logger.info("Provider: VkMusic.fun")
                 async with VkMusicFunProvider() as vkmusic:
@@ -765,7 +765,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"VkMusicFunProvider error: {e}")
 
-            # 2.6) Пробуем Last.fm
+            # 2.6) Пробуємо Last.fm
             try:
                 logger.info("Provider: Last.fm")
                 # Last.fm API для поиска треков
@@ -816,7 +816,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Last.fm error: {e}")
 
-            # 2.7) Пробуем Genius
+            # 2.7) Пробуємо Genius
             try:
                 logger.info("Provider: Genius")
                 import aiohttp
@@ -868,7 +868,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Genius error: {e}")
 
-            # 2.8) Пробуем MusicBrainz
+            # 2.8) Пробуємо MusicBrainz
             try:
                 logger.info("Provider: MusicBrainz")
                 import aiohttp
@@ -918,7 +918,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"MusicBrainz error: {e}")
 
-            # 2.9) Пробуем Discogs
+            # 2.9) Пробуємо Discogs
             try:
                 logger.info("Provider: Discogs")
                 import aiohttp
@@ -969,7 +969,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Discogs error: {e}")
 
-            # 2.10) Пробуем Rate Your Music
+            # 2.10) Пробуємо Rate Your Music
             try:
                 logger.info("Provider: Rate Your Music")
                 import aiohttp
@@ -1019,7 +1019,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Rate Your Music error: {e}")
 
-            # 2.11) Пробуем AllMusic
+            # 2.11) Пробуємо AllMusic
             try:
                 logger.info("Provider: AllMusic")
                 import aiohttp
@@ -1064,7 +1064,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"AllMusic error: {e}")
 
-            # 2.12) Пробуем Pitchfork
+            # 2.12) Пробуємо Pitchfork
             try:
                 logger.info("Provider: Pitchfork")
                 import aiohttp
@@ -1114,7 +1114,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Pitchfork error: {e}")
 
-            # 2.13) Пробуем NME
+            # 2.13) Пробуємо NME
             try:
                 logger.info("Provider: NME")
                 import aiohttp
@@ -1164,7 +1164,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"NME error: {e}")
 
-            # 2.14) Пробуем Rolling Stone
+            # 2.14) Пробуємо Rolling Stone
             try:
                 logger.info("Provider: Rolling Stone")
                 import aiohttp
@@ -1214,7 +1214,7 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Rolling Stone error: {e}")
 
-            # 2.15) Пробуем Billboard
+            # 2.15) Пробуємо Billboard
             try:
                 logger.info("Provider: Billboard")
                 import aiohttp
@@ -1264,10 +1264,10 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Billboard error: {e}")
 
-            # 2.16) Пробуем дополнительные варианты поиска на YouTube
+            # 2.16) Пробуємо додаткові варіанти пошуку на YouTube
             try:
                 logger.info("Provider: YouTube Variants")
-                # Пробуем разные варианты поискового запроса
+                # Пробуємо різні варіанти пошукового запиту
                 search_variants = [
                     clean_query,
                     clean_query.replace('_', ' '),
@@ -1281,9 +1281,9 @@ class MusicDownloader:
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' music',
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' song',
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' audio',
-                    # Пробуем только первую часть названия
+                    # Пробуємо тільки першу частину назви
                     clean_query.split('_')[0] if '_' in clean_query else clean_query,
-                    # Пробуем только вторую часть названия
+                    # Пробуємо тільки другу частину назви
                     clean_query.split('_')[1] if '_' in clean_query and len(clean_query.split('_')) > 1 else clean_query,
                     # Дополнительные варианты для треков с подчеркиваниями
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' official',
@@ -1292,12 +1292,12 @@ class MusicDownloader:
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' cover',
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' slowed',
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' sped up',
-                    # Пробуем без знаков препинания
+                    # Пробуємо без знаків пунктуації
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().replace('.', '').replace('?', '').replace(':', ''),
-                    # Пробуем с разными разделителями
+                    # Пробуємо з різними розділювачами
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().replace(' ', ' - '),
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().replace(' ', ' | '),
-                    # Пробуем только ключевые слова
+                    # Пробуємо тільки ключові слова
                     ' '.join(clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().split()[:3]),
                     ' '.join(clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().split()[-3:]),
                 ]
@@ -1344,7 +1344,7 @@ class MusicDownloader:
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             search_results = ydl.extract_info(f"ytsearch3:{variant}", download=False)
                             if search_results and 'entries' in search_results and search_results['entries']:
-                                # Пробуем скачать первое видео
+                                # Пробуємо завантажити перше відео
                                 video_url = search_results['entries'][0].get('webpage_url')
                                 if video_url:
                                     try:
@@ -1363,10 +1363,10 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"YouTube Variants error: {e}")
 
-            # 2.17) Пробуем SoundCloud с разными вариантами
+            # 2.17) Пробуємо SoundCloud з різними варіантами
             try:
                 logger.info("Provider: SoundCloud Variants")
-                # Пробуем разные варианты поискового запроса на SoundCloud
+                # Пробуємо різні варіанти пошукового запиту на SoundCloud
                 search_variants = [
                     clean_query,
                     clean_query.replace('_', ' '),
@@ -1383,7 +1383,7 @@ class MusicDownloader:
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' cover',
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' slowed',
                     clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip() + ' sped up',
-                    # Пробуем только ключевые слова
+                    # Пробуємо тільки ключові слова
                     ' '.join(clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().split()[:2]),
                     ' '.join(clean_query.replace('_', ' ').replace(',', ' ').replace('!', '').replace('  ', ' ').strip().split()[-2:]),
                 ]
@@ -1412,7 +1412,7 @@ class MusicDownloader:
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             search_results = ydl.extract_info(f"scsearch3:{variant}", download=False)
                             if search_results and 'entries' in search_results and search_results['entries']:
-                                # Пробуем скачать первое видео
+                                # Пробуємо завантажити перше відео
                                 video_url = search_results['entries'][0].get('webpage_url')
                                 if video_url:
                                     try:
@@ -1431,10 +1431,10 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"SoundCloud Variants error: {e}")
 
-            # 2.18) Пробуем Bandcamp с разными вариантами
+            # 2.18) Пробуємо Bandcamp з різними варіантами
             try:
                 logger.info("Provider: Bandcamp Variants")
-                # Пробуем разные варианты поискового запроса на Bandcamp
+                # Пробуємо різні варіанти пошукового запиту на Bandcamp
                 search_variants = [
                     clean_query,
                     clean_query.replace('_', ' '),
@@ -1466,7 +1466,7 @@ class MusicDownloader:
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             search_results = ydl.extract_info(f"bandcampsearch3:{variant}", download=False)
                             if search_results and 'entries' in search_results and search_results['entries']:
-                                # Пробуем скачать первое видео
+                                # Пробуємо завантажити перше відео
                                 video_url = search_results['entries'][0].get('webpage_url')
                                 if video_url:
                                     try:
@@ -1485,10 +1485,10 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Bandcamp Variants error: {e}")
 
-            # 2.19) Пробуем Mixcloud с разными вариантами
+            # 2.19) Пробуємо Mixcloud з різними варіантами
             try:
                 logger.info("Provider: Mixcloud Variants")
-                # Пробуем разные варианты поискового запроса на Mixcloud
+                # Пробуємо різні варіанти пошукового запиту на Mixcloud
                 search_variants = [
                     clean_query,
                     clean_query.replace('_', ' '),
@@ -1520,7 +1520,7 @@ class MusicDownloader:
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             search_results = ydl.extract_info(f"mixcloudsearch3:{variant}", download=False)
                             if search_results and 'entries' in search_results and search_results['entries']:
-                                # Пробуем скачать первое видео
+                                # Пробуємо завантажити перше відео
                                 video_url = search_results['entries'][0].get('webpage_url')
                                 if video_url:
                                     try:
@@ -1539,10 +1539,10 @@ class MusicDownloader:
             except Exception as e:
                 logger.error(f"Mixcloud Variants error: {e}")
 
-            # 2.20) Пробуем Archive.org с разными вариантами
+            # 2.20) Пробуємо Archive.org з різними варіантами
             try:
                 logger.info("Provider: Archive.org Variants")
-                # Пробуем разные варианты поискового запроса на Archive.org
+                # Пробуємо різні варіанти пошукового запиту на Archive.org
                 search_variants = [
                     clean_query,
                     clean_query.replace('_', ' '),
@@ -1574,7 +1574,7 @@ class MusicDownloader:
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             search_results = ydl.extract_info(f"archiveorgsearch3:{variant}", download=False)
                             if search_results and 'entries' in search_results and search_results['entries']:
-                                # Пробуем скачать первое видео
+                                # Пробуємо завантажити перше відео
                                 video_url = search_results['entries'][0].get('webpage_url')
                                 if video_url:
                                     try:
@@ -1599,7 +1599,7 @@ class MusicDownloader:
         
         # Дополнительные провайдеры для увеличения шансов нахождения трека
         
-        # 3.1) Пробуем Last.fm + YouTube
+        # 3.1) Пробуємо Last.fm + YouTube
         try:
             logger.info("Provider: Last.fm + YouTube")
             import aiohttp
@@ -1654,7 +1654,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"Last.fm + YouTube failed: {e}")
         
-        # 3.2) Пробуем Genius + YouTube
+        # 3.2) Пробуємо Genius + YouTube
         try:
             logger.info("Provider: Genius + YouTube")
             import aiohttp
@@ -1710,7 +1710,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"Genius + YouTube failed: {e}")
         
-        # 3.3) Пробуем MusicBrainz + YouTube
+        # 3.3) Пробуємо MusicBrainz + YouTube
         try:
             logger.info("Provider: MusicBrainz + YouTube")
             import aiohttp
@@ -1766,7 +1766,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"MusicBrainz + YouTube failed: {e}")
         
-        # 3.4) Пробуем Discogs + YouTube
+        # 3.4) Пробуємо Discogs + YouTube
         try:
             logger.info("Provider: Discogs + YouTube")
             import aiohttp
@@ -1819,7 +1819,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"Discogs + YouTube failed: {e}")
         
-        # 3.5) Пробуем Rate Your Music + YouTube
+        # 3.5) Пробуємо Rate Your Music + YouTube
         try:
             logger.info("Provider: Rate Your Music + YouTube")
             import aiohttp
@@ -1868,7 +1868,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"Rate Your Music + YouTube failed: {e}")
         
-        # 3.6) Пробуем AllMusic + YouTube
+        # 3.6) Пробуємо AllMusic + YouTube
         try:
             logger.info("Provider: AllMusic + YouTube")
             import aiohttp
@@ -1917,7 +1917,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"AllMusic + YouTube failed: {e}")
         
-        # 3.7) Пробуем Pitchfork + YouTube
+        # 3.7) Пробуємо Pitchfork + YouTube
         try:
             logger.info("Provider: Pitchfork + YouTube")
             import aiohttp
@@ -1966,7 +1966,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"Pitchfork + YouTube failed: {e}")
         
-        # 3.8) Пробуем NME + YouTube
+        # 3.8) Пробуємо NME + YouTube
         try:
             logger.info("Provider: NME + YouTube")
             import aiohttp
@@ -2015,7 +2015,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"NME + YouTube failed: {e}")
         
-        # 3.9) Пробуем Rolling Stone + YouTube
+        # 3.9) Пробуємо Rolling Stone + YouTube
         try:
             logger.info("Provider: Rolling Stone + YouTube")
             import aiohttp
@@ -2064,7 +2064,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"Rolling Stone + YouTube failed: {e}")
         
-        # 3.10) Пробуем Billboard + YouTube
+        # 3.10) Пробуємо Billboard + YouTube
         try:
             logger.info("Provider: Billboard + YouTube")
             import aiohttp
@@ -2115,7 +2115,7 @@ class MusicDownloader:
         
         # Дополнительные музыкальные сервисы для максимального покрытия
         
-        # 4.1) Пробуем Spotify Web API + YouTube
+        # 4.1) Пробуємо Spotify Web API + YouTube
         try:
             logger.info("Provider: Spotify Web + YouTube")
             import aiohttp
@@ -2168,7 +2168,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"Spotify Web + YouTube failed: {e}")
         
-        # 4.2) Пробуем Apple Music + YouTube
+        # 4.2) Пробуємо Apple Music + YouTube
         try:
             logger.info("Provider: Apple Music + YouTube")
             import aiohttp
@@ -2220,7 +2220,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"Apple Music + YouTube failed: {e}")
         
-        # 4.3) Пробуем Tidal + YouTube
+        # 4.3) Пробуємо Tidal + YouTube
         try:
             logger.info("Provider: Tidal + YouTube")
             import aiohttp
@@ -2273,7 +2273,7 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"Tidal + YouTube failed: {e}")
         
-        # 4.4) Пробуем Amazon Music + YouTube
+        # 4.4) Пробуємо Amazon Music + YouTube
         try:
             logger.info("Provider: Amazon Music + YouTube")
             import aiohttp
@@ -2873,35 +2873,26 @@ class MusicDownloader:
         except Exception as e:
             logger.error(f"Songkick + YouTube failed: {e}")
         
-        # Если ничего не найдено
+        # Якщо нічого не знайдено
         logger.info("All providers failed to find the track")
         return None
 
 
 @dp.message(Command("start"))
 async def start_handler(message: Message):
-    """Обработчик команды /start"""
+    """Обробник команди /start"""
     welcome_text = """
-🎵 Добро пожаловать в Spotify Music Bot!
+🎵 Привіт! Я Spotify Music Bot
 
-Отправьте мне ссылку на трек, плейлист или альбом Spotify, и я найду и отправлю вам MP3 файл.
+Просто надішли мені посилання на трек, плейлист або альбом з Spotify, і я знайду та надішлю тобі MP3 файл.
 
-Поддерживаемые форматы:
-• https://open.spotify.com/track/...
-• https://open.spotify.com/playlist/...
-• https://open.spotify.com/album/...
-• spotify:track:...
-• spotify:playlist:...
-• spotify:album:...
+Команди:
+/start - Почати роботу
+/help - Допомога
 
-Команды:
-/start - Начать работу
-/help - Помощь
-
-Ограничения:
-• Плейлисты и альбомы: максимум 15 треков
-• Размер файла: максимум 50MB
-• Качество: 192kbps MP3
+Обмеження:
+• Плейлисти та альбоми: максимум 15 треків
+• Розмір файлу: максимум 50MB
     """
     
     await message.answer(welcome_text)
@@ -2909,21 +2900,21 @@ async def start_handler(message: Message):
 
 @dp.message(Command("status"))
 async def status_command(message: Message):
-    """Показывает статус бота и активных загрузок"""
+    """Показує статус бота та активних завантажень"""
     global active_downloads
     
     status_text = (
         f"🤖 **Статус бота**\n\n"
-        f"🔄 Активных загрузок: {active_downloads}/3\n"
-        f"🎵 FFmpeg доступен: {'✅' if is_ffmpeg_available() else '❌'}\n"
+        f"🔄 Активних завантажень: {active_downloads}/3\n"
+        f"🎵 FFmpeg доступний: {'✅' if is_ffmpeg_available() else '❌'}\n"
         f"🎧 Spotify API: {'✅' if spotify_client_id and spotify_client_secret else '❌'}\n"
-        f"🌐 Провайдеров: 25+\n\n"
-        f"💡 **Возможности:**\n"
-        f"• Поиск по Spotify ссылкам\n"
-        f"• Поиск по названию трека\n"
-        f"• Фильтрация оригинальных версий\n"
-        f"• Параллельная обработка запросов\n"
-        f"• 25+ источников музыки"
+        f"🌐 Провайдерів: 25+\n\n"
+        f"💡 **Можливості:**\n"
+        f"• Пошук за Spotify посиланнями\n"
+        f"• Пошук за назвою треку\n"
+        f"• Фільтрація оригінальних версій\n"
+        f"• Паралельна обробка запитів\n"
+        f"• 25+ джерел музики"
     )
     
     await message.answer(status_text, parse_mode="Markdown")
@@ -2931,31 +2922,31 @@ async def status_command(message: Message):
 
 @dp.message(Command("help"))
 async def help_handler(message: Message):
-    """Обработчик команды /help"""
+    """Обробник команди /help"""
     help_text = """
-📖 Помощь по использованию бота
+📖 Допомога з використанням бота
 
-Как использовать:
-1. Скопируйте ссылку на трек, плейлист или альбом Spotify
-2. Отправьте ссылку боту
-3. Дождитесь обработки и получения MP3 файла
+Як користуватися:
+1. Скопіюй посилання на трек, плейлист або альбом з Spotify
+2. Надішли посилання боту
+3. Дочекайся обробки та отримання MP3 файлу
 
-Поддерживаемые форматы:
+Підтримувані формати:
 • Треки: https://open.spotify.com/track/...
-• Плейлисты: https://open.spotify.com/playlist/...
-• Альбомы: https://open.spotify.com/album/...
+• Плейлисти: https://open.spotify.com/playlist/...
+• Альбоми: https://open.spotify.com/album/...
 
-Примеры ссылок:
+Приклади посилань:
 • https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh
 • https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
 • https://open.spotify.com/album/1A2GTWGtFfWp7KSQTwWOyo
 
-Ограничения:
-• Плейлисты и альбомы: максимум 15 треков
-• Размер файла: максимум 50MB
-• Качество: 192kbps MP3
+Обмеження:
+• Плейлисти та альбоми: максимум 15 треків
+• Розмір файлу: максимум 50MB
+• Якість: 192kbps MP3
 
-Примечание: Бот работает через поиск в YouTube, поэтому качество может варьироваться.
+Примітка: Бот працює через пошук у YouTube, тому якість може варіюватися.
     """
     
     await message.answer(help_text)
@@ -2963,35 +2954,35 @@ async def help_handler(message: Message):
 
 @dp.message(F.text)
 async def process_spotify_link(message: Message):
-    """Обработчик ссылок Spotify"""
+    """Обробник посилань Spotify"""
     text = message.text.strip()
     
-    # Отправляем сообщение о начале обработки
-    processing_msg = await message.answer("🔄 Обрабатываю ссылку...")
+    # Надсилаємо повідомлення про початок обробки
+    processing_msg = await message.answer("🔄 Обробляю посилання...")
     
     try:
-        # Извлекаем ID из ссылки (теперь асинхронно)
+        # Витягуємо ID з посилання (тепер асинхронно)
         ids = await spotify_parser.extract_ids_from_url(text)
         
         if not any(ids.values()):
-            await processing_msg.edit_text("❌ Пожалуйста, отправьте ссылку на трек или плейлист Spotify.")
+            await processing_msg.edit_text("❌ Будь ласка, надішліть посилання на трек або плейлист Spotify.")
             return
         
         if ids['track']:
-            # Обрабатываем трек
+            # Обробляємо трек
             await process_track(message, ids['track'], processing_msg)
         elif ids['playlist']:
-            # Обрабатываем плейлист
+            # Обробляємо плейлист
             await process_playlist(message, ids['playlist'], processing_msg)
         elif ids['album']:
-            # Обрабатываем альбом
+            # Обробляємо альбом
             await process_album(message, ids['album'], processing_msg)
         else:
-            await processing_msg.edit_text("❌ Не удалось распознать ссылку Spotify.")
+            await processing_msg.edit_text("❌ Не вдалося розпізнати посилання Spotify.")
             
     except Exception as e:
         logger.error(f"Error processing Spotify link: {e}")
-        await processing_msg.edit_text("❌ Произошла ошибка при обработке ссылки.")
+        await processing_msg.edit_text("❌ Сталася помилка при обробці посилання.")
 
 
 async def process_track(message: Message, track_id: str, processing_msg: types.Message):
@@ -3003,7 +2994,7 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
         await processing_msg.edit_text("⏳ Слишком много запросов одновременно. Попробуйте через минуту.")
         return
     
-    # Увеличиваем счетчик активных загрузок
+    # Збільшуємо лічильник активних завантажень
     active_downloads += 1
     
     try:
@@ -3011,17 +3002,17 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
         track_info = await spotify_parser.get_track_info(track_id)
         
         if not track_info:
-            await processing_msg.edit_text("❌ Не удалось получить информацию о треке.")
+            await processing_msg.edit_text("❌ Не вдалося отримати інформацію про трек.")
             return
         
-        # Обновляем сообщение
+        # Оновлюємо повідомлення
         await processing_msg.edit_text(
-            f"🎵 Найден трек: {track_info['name']} - {track_info['artist']}\n"
-            f"⏱️ Длительность: {track_info['duration_formatted']}\n"
-            f"🔄 Ищу и скачиваю... (активных загрузок: {active_downloads})"
+            f"🎵 Знайдено трек: {track_info['name']} - {track_info['artist']}\n"
+            f"⏱️ Тривалість: {track_info['duration_formatted']}\n"
+            f"🔄 Шукаю та завантажую... (активних завантажень: {active_downloads})"
         )
         
-        # Формируем поисковый запрос
+        # Формуємо пошуковий запит
         search_query = spotify_parser.create_search_query(track_info)
         
         # Используем семафор для ограничения одновременных загрузок
@@ -3108,8 +3099,8 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
                             
                 except Exception as conversion_error:
                     logger.error(f"Conversion error: {conversion_error}")
-                    # Если конвертация не удалась, удаляем файл и сообщаем об ошибке
-                    await processing_msg.edit_text("❌ Не удалось конвертировать файл в MP3.")
+                    # Якщо конвертація не вдалася, видаляємо файл та повідомляємо про помилку
+                    await processing_msg.edit_text("❌ Не вдалося конвертувати файл у MP3.")
                     os.remove(file_path)
                     return
             
@@ -3132,16 +3123,16 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
                 await processing_msg.delete()
             except Exception as send_error:
                 logger.error(f"Error sending file: {send_error}")
-                await processing_msg.edit_text(f"❌ Ошибка отправки файла: {send_error}")
+                await processing_msg.edit_text(f"❌ Помилка відправки файлу: {send_error}")
         else:
             logger.error(f"File not found or invalid path: {file_path}")
-            await processing_msg.edit_text("❌ Не удалось найти или скачать трек.")
+            await processing_msg.edit_text("❌ Не вдалося знайти або завантажити трек.")
             
     except Exception as e:
         logger.error(f"Error processing track: {e}")
-        await processing_msg.edit_text("❌ Произошла ошибка при обработке трека.")
+        await processing_msg.edit_text("❌ Сталася помилка при обробці треку.")
     finally:
-        # Уменьшаем счетчик активных загрузок
+        # Зменшуємо лічильник активних завантажень
         active_downloads -= 1
 
 
@@ -3152,38 +3143,38 @@ async def process_playlist(message: Message, playlist_id: str, processing_msg: t
         playlist_info = await spotify_parser.get_playlist_info(playlist_id)
         
         if not playlist_info:
-            await processing_msg.edit_text("❌ Не удалось получить информацию о плейлисте.")
+            await processing_msg.edit_text("❌ Не вдалося отримати інформацію про плейлист.")
             return
         
         tracks = playlist_info['tracks']
         
         if len(tracks) > 15:
             await processing_msg.edit_text(
-                f"⚠️ Плейлист '{playlist_info['name']}' содержит {len(tracks)} треков.\n"
-                f"Для больших плейлистов рекомендуется обрабатывать треки по отдельности.\n"
-                f"Максимум для обработки: 15 треков."
+                f"⚠️ Плейлист '{playlist_info['name']}' містить {len(tracks)} треків.\n"
+                f"Для великих плейлистів рекомендується обробляти треки окремо.\n"
+                f"Максимум для обробки: 15 треків."
             )
             return
         
-        # Обновляем сообщение
+        # Оновлюємо повідомлення
         await processing_msg.edit_text(
             f"🎵 Плейлист: {playlist_info['name']}\n"
             f"👤 Автор: {playlist_info['owner']}\n"
-            f"📊 Треков: {len(tracks)}\n"
-            f"🔄 Начинаю скачивание..."
+            f"📊 Треків: {len(tracks)}\n"
+            f"🔄 Починаю завантаження..."
         )
         
         downloaded_count = 0
         
         for i, track in enumerate(tracks, 1):
             try:
-                # Обновляем прогресс
+                # Оновлюємо прогрес
                 await processing_msg.edit_text(
                     f"🎵 Плейлист: {playlist_info['name']}\n"
-                    f"📥 Скачиваю {i}/{len(tracks)}: {track['name']} - {track['artist']}"
+                    f"📥 Завантажую {i}/{len(tracks)}: {track['name']} - {track['artist']}"
                 )
                 
-                # Формируем поисковый запрос
+                # Формуємо пошуковий запит
                 search_query = spotify_parser.create_search_query(track)
                 
                 # Скачиваем музыку
@@ -3212,14 +3203,14 @@ async def process_playlist(message: Message, playlist_id: str, processing_msg: t
                 continue
         
         await processing_msg.edit_text(
-            f"✅ Скачивание завершено!\n"
+            f"✅ Завантаження завершено!\n"
             f"🎵 Плейлист: {playlist_info['name']}\n"
-            f"📊 Успешно скачано: {downloaded_count}/{len(tracks)} треков"
+            f"📊 Успішно завантажено: {downloaded_count}/{len(tracks)} треків"
         )
         
     except Exception as e:
         logger.error(f"Error processing playlist: {e}")
-        await processing_msg.edit_text("❌ Произошла ошибка при обработке плейлиста.")
+        await processing_msg.edit_text("❌ Сталася помилка при обробці плейлисту.")
 
 
 async def process_album(message: Message, album_id: str, processing_msg: types.Message):
@@ -3229,39 +3220,39 @@ async def process_album(message: Message, album_id: str, processing_msg: types.M
         album_info = await spotify_parser.get_album_info(album_id)
         
         if not album_info:
-            await processing_msg.edit_text("❌ Не удалось получить информацию об альбоме.")
+            await processing_msg.edit_text("❌ Не вдалося отримати інформацію про альбом.")
             return
         
         tracks = album_info['tracks']
         
         if len(tracks) > 15:
             await processing_msg.edit_text(
-                f"⚠️ Альбом '{album_info['name']}' содержит {len(tracks)} треков.\n"
-                f"Для больших альбомов рекомендуется обрабатывать треки по отдельности.\n"
-                f"Максимум для обработки: 15 треков."
+                f"⚠️ Альбом '{album_info['name']}' містить {len(tracks)} треків.\n"
+                f"Для великих альбомів рекомендується обробляти треки окремо.\n"
+                f"Максимум для обробки: 15 треків."
             )
             return
         
-        # Обновляем сообщение
+        # Оновлюємо повідомлення
         await processing_msg.edit_text(
             f"🎵 Альбом: {album_info['name']}\n"
-            f"👤 Исполнитель: {album_info['artist']}\n"
-            f"📅 Год: {album_info['release_date']}\n"
-            f"📊 Треков: {len(tracks)}\n"
-            f"🔄 Начинаю скачивание..."
+            f"👤 Виконавець: {album_info['artist']}\n"
+            f"📅 Рік: {album_info['release_date']}\n"
+            f"📊 Треків: {len(tracks)}\n"
+            f"🔄 Починаю завантаження..."
         )
         
         downloaded_count = 0
         
         for i, track in enumerate(tracks, 1):
             try:
-                # Обновляем прогресс
+                # Оновлюємо прогрес
                 await processing_msg.edit_text(
                     f"🎵 Альбом: {album_info['name']}\n"
-                    f"📥 Скачиваю {i}/{len(tracks)}: {track['name']}"
+                    f"📥 Завантажую {i}/{len(tracks)}: {track['name']}"
                 )
                 
-                # Формируем поисковый запрос
+                # Формуємо пошуковий запит
                 search_query = spotify_parser.create_search_query(track)
                 
                 # Скачиваем музыку
@@ -3290,14 +3281,14 @@ async def process_album(message: Message, album_id: str, processing_msg: types.M
                 continue
         
         await processing_msg.edit_text(
-            f"✅ Скачивание завершено!\n"
+            f"✅ Завантаження завершено!\n"
             f"🎵 Альбом: {album_info['name']}\n"
-            f"📊 Успешно скачано: {downloaded_count}/{len(tracks)} треков"
+            f"📊 Успішно завантажено: {downloaded_count}/{len(tracks)} треків"
         )
         
     except Exception as e:
         logger.error(f"Error processing album: {e}")
-        await processing_msg.edit_text("❌ Произошла ошибка при обработке альбома.")
+        await processing_msg.edit_text("❌ Сталася помилка при обробці альбому.")
 
 
 async def health_check(request):
