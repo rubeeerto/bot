@@ -15,7 +15,13 @@ from aiohttp import web
 
 from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider, VKMusicProvider, YandexMusicProvider, DeezerProvider, AudiomackProvider, MusopenProvider, PleerNetProvider, MP3JuicesProvider, ZaycevProvider, MyzukaProvider, RuTrackProvider, RedMp3Provider, Mp3SkullsProvider, Music7sProvider, Mp3DownloadProvider, Beemp3sProvider, VkMusicFunProvider, ImprovedSearchEngine, EnhancedSoundCloudProvider
 
-
+db_config = {
+    'user': 'postgres',
+    'password': 'MppPCJrvBTeobJDWcFYnBVHISFBEcfxN',
+    'database': 'railway',
+    'host': 'postgres.railway.internal',
+    'port': '5432',
+}
 
 
 # Загружаем переменные окружения
