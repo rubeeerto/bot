@@ -2964,6 +2964,29 @@ async def help_handler(message: Message):
     await message.answer(help_text)
 
 
+@dp.message(Command("admin"))
+async def admin_handler(message: Message):
+    if message.from_user.id != 810944378:
+        await message.reply("⛔️ У вас нет доступа к админ-команде.")
+        return
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Статистика", callback_data="show_stats")]
+    ])
+    await message.reply("🔐 Админ-панель", reply_markup=keyboard)
+
+# Callback для статистики
+@dp.callback_query(F.data == "show_stats")
+async def show_stats_callback(call: types.CallbackQuery):
+    if call.from_user.id != 810944378:
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+    unique_users = len(user_requests_today)
+    await call.answer(
+        f"👤 Уникальных пользователей за сегодня: {unique_users}\n📊 Всего запросов: {requests_today}",
+        show_alert=True
+    )
+
+
 @dp.message(F.text)
 async def process_spotify_link(message: Message):
     """Обробник посилань Spotify"""
@@ -3363,30 +3386,6 @@ async def main():
                 raise
         else:
             raise
-
-
-# Команда /admin
-@dp.message(Command("admin"))
-async def admin_handler(message: Message):
-    if message.from_user.id != 810944378:
-        await message.reply("⛔️ У вас нет доступа к админ-команде.")
-        return
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Статистика", callback_data="show_stats")]
-    ])
-    await message.reply("🔐 Админ-панель", reply_markup=keyboard)
-
-# Callback для статистики
-@dp.callback_query(F.data == "show_stats")
-async def show_stats_callback(call: types.CallbackQuery):
-    if call.from_user.id != 810944378:
-        await call.answer("Нет доступа.", show_alert=True)
-        return
-    unique_users = len(user_requests_today)
-    await call.answer(
-        f"👤 Уникальных пользователей за сегодня: {unique_users}\n📊 Всего запросов: {requests_today}",
-        show_alert=True
-    )
 
 
 if __name__ == "__main__":
