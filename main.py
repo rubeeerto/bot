@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import yt_dlp
 import shutil
 from aiohttp import web
+from datetime import datetime
 
 from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider, VKMusicProvider, YandexMusicProvider, DeezerProvider, AudiomackProvider, MusopenProvider, PleerNetProvider, MP3JuicesProvider, ZaycevProvider, MyzukaProvider, RuTrackProvider, RedMp3Provider, Mp3SkullsProvider, Music7sProvider, Mp3DownloadProvider, Beemp3sProvider, VkMusicFunProvider, ImprovedSearchEngine, EnhancedSoundCloudProvider
 
@@ -57,6 +58,11 @@ spotify_client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
 
 # Створюємо екземпляр парсера Spotify
 spotify_parser = EnhancedSpotifyParser(spotify_client_id, spotify_client_secret)
+
+# Глобальные переменные для статистики
+user_requests_today = {}
+requests_today = 0
+request_day = datetime.utcnow().strftime('%Y-%m-%d')
 
 
 class MusicDownloader:
@@ -2961,6 +2967,19 @@ async def help_handler(message: Message):
 @dp.message(F.text)
 async def process_spotify_link(message: Message):
     """Обробник посилань Spotify"""
+    global user_requests_today, requests_today, request_day
+    # Фиксируем день, сбрасываем если дата сменилась (по UTC)
+    today = datetime.utcnow().strftime('%Y-%m-%d')
+    if today != request_day:
+        user_requests_today.clear()
+        requests_today = 0
+        request_day = today
+
+    # Статистика: сколько пользователей и сколько запросов
+    uid = message.from_user.id
+    user_requests_today[uid] = user_requests_today.get(uid, 0) + 1
+    requests_today += 1
+
     text = message.text.strip()
     
     # Надсилаємо повідомлення про початок обробки
@@ -3344,6 +3363,30 @@ async def main():
                 raise
         else:
             raise
+
+
+# Команда /admin
+@dp.message(Command("admin"))
+async def admin_handler(message: Message):
+    if message.from_user.id != 810944378:
+        await message.reply("⛔️ У вас нет доступа к админ-команде.")
+        return
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Статистика", callback_data="show_stats")]
+    ])
+    await message.reply("🔐 Админ-панель", reply_markup=keyboard)
+
+# Callback для статистики
+@dp.callback_query(F.data == "show_stats")
+async def show_stats_callback(call: types.CallbackQuery):
+    if call.from_user.id != 810944378:
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+    unique_users = len(user_requests_today)
+    await call.answer(
+        f"👤 Уникальных пользователей за сегодня: {unique_users}\n📊 Всего запросов: {requests_today}",
+        show_alert=True
+    )
 
 
 if __name__ == "__main__":
