@@ -2031,7 +2031,14 @@ class EnhancedSoundCloudProvider:
                         logger.warning(f"Enhanced SoundCloud: Could not remove {f}: {e}")
             os.makedirs("downloads", exist_ok=True)
             logger.info(f"Enhanced SoundCloud: Downloads directory ready and cleaned")
+            logger.info(f"Enhanced SoundCloud: downloads dir after clean: {glob.glob('downloads/*')}")
 
+            # Список before_files до скачивания
+            before_files = set(glob.glob("downloads/*"))
+            logger.info(f"Enhanced SoundCloud: Files before download: {before_files}")
+
+            # --- Ваш код скачивания (yt-dlp или иной способ) ---
+            import yt_dlp
             ydl_opts = {
                 'format': 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[ext=webm]/bestaudio/best',
                 'outtmpl': f'downloads/%(title)s.%(ext)s',
@@ -2058,20 +2065,15 @@ class EnhancedSoundCloudProvider:
                         '-max_muxing_queue_size', '1024'  # Увеличиваем буфер
                     ]
                 },
-                'ignoreerrors': True,  # Игнорируем ошибки постобработки
-                'no_check_certificate': True,  # Отключаем проверку сертификатов
-                # Принудительно конвертируем в MP3
+                'ignoreerrors': True,
+                'no_check_certificate': True,
                 'prefer_ffmpeg': True,
                 'keepvideo': False,
             }
-            import yt_dlp
-
-            # Получаем список файлов до скачивания
-            before_files = set(glob.glob("downloads/*"))
-            logger.info(f"Enhanced SoundCloud: Files before download: {before_files}")
-
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
+                # После скачивания — лог содержимого папки
+                logger.info(f"Enhanced SoundCloud: downloads dir after download: {glob.glob('downloads/*')}")
                 if info:
                     title = clean_filename(info.get('title', 'track'))
                     logger.info(f"Enhanced SoundCloud: Downloaded '{title}', looking for file...")
@@ -2080,23 +2082,20 @@ class EnhancedSoundCloudProvider:
                         if os.path.exists(file_path):
                             logger.info(f"Enhanced SoundCloud: Found file {file_path}")
                             return file_path
-                    # AAC as last-resort
                     aac_path = f"downloads/{title}.aac"
                     if os.path.exists(aac_path):
                         logger.info(f"Enhanced SoundCloud: Found AAC file {aac_path}, will convert to MP3")
                         return aac_path
 
-            await asyncio.sleep(3)  # Ждём завершения скачивания полностью
+            await asyncio.sleep(3)
 
-            # Получаем список файлов после скачивания
+            # После скачивания — второй лог содержимого
             after_files = set(glob.glob("downloads/*"))
             logger.info(f"Enhanced SoundCloud: Files after download: {after_files}")
-
-            # Находим новые файлы
             new_files = after_files - before_files
             logger.info(f"Enhanced SoundCloud: New files found: {new_files}")
 
-            # Если новые файлы появились — возвращаем самый подходящий
+            # Если появились "новые" файлы
             if new_files:
                 new_files_list = list(new_files)
                 new_files_list.sort(key=lambda x: os.path.getctime(x), reverse=True)
@@ -2104,7 +2103,6 @@ class EnhancedSoundCloudProvider:
                     try:
                         file_size = os.path.getsize(new_file)
                         logger.info(f"Enhanced SoundCloud: Checking file {new_file} (size: {file_size} bytes)")
-                        # Не пустой файл
                         if file_size > 1000:
                             if new_file.lower().endswith('.mp3'):
                                 logger.info(f"Enhanced SoundCloud: Using MP3 file {new_file} (size: {file_size} bytes)")
@@ -2118,29 +2116,28 @@ class EnhancedSoundCloudProvider:
                     except Exception as e:
                         logger.error(f"Enhanced SoundCloud: Error checking new file {new_file}: {e}")
                         continue
-            # Если новых файлов не найдено — возвращаем самый свежий аудиофайл среди всех
+            # Нет новых файлов — fallback: выбрать самый последний подходящий аудиофайл (даже если он старый)
             all_files = glob.glob("downloads/*")
             all_files.sort(key=lambda x: os.path.getctime(x), reverse=True)
-            logger.info(f"Enhanced SoundCloud: All files in downloads: {all_files}")
+            logger.info(f"Enhanced SoundCloud: fallback all files in downloads: {all_files}")
+            best = None
+            best_mtime = 0
             current_time = time.time()
             for file_path in all_files:
                 try:
                     file_size = os.path.getsize(file_path)
                     file_age = current_time - os.path.getctime(file_path)
-                    logger.info(f"Enhanced SoundCloud: File {file_path} (size: {file_size}, age: {file_age}s)")
-                    if file_age < 45 and file_size > 1000:
-                        if file_path.lower().endswith('.mp3'):
-                            logger.info(f"Enhanced SoundCloud: Fallback using MP3 file {file_path} (age: {file_age}s, size: {file_size})")
-                            return file_path
-                        elif file_path.lower().endswith(('.webm', '.m4a', '.ogg', '.wav')):
-                            logger.info(f"Enhanced SoundCloud: Fallback using audio file {file_path} (age: {file_age}s, size: {file_size})")
-                            return file_path
-                        elif file_path.lower().endswith('.aac'):
-                            logger.info(f"Enhanced SoundCloud: Fallback using AAC file {file_path} (age: {file_age}s, size: {file_size}, will convert)")
-                            return file_path
+                    logger.info(f"Enhanced SoundCloud: Fallback file {file_path} (size: {file_size}, age: {file_age}s)")
+                    if file_size > 1000 and file_path.lower().endswith(('.mp3', '.webm', '.m4a', '.ogg', '.wav', '.aac')):
+                        if best is None or os.path.getctime(file_path) > best_mtime:
+                            best = file_path
+                            best_mtime = os.path.getctime(file_path)
                 except Exception as e:
                     logger.error(f"Enhanced SoundCloud: Error in fallback check {file_path}: {e}")
                     continue
+            if best:
+                logger.info(f"Enhanced SoundCloud: Fallback returning best available file: {best}")
+                return best
             logger.warning("Enhanced SoundCloud: Nothing found after all checks!")
             return None
         except Exception as e:
