@@ -8,7 +8,7 @@ spotipy>=2.23.0
 yt-dlp==2023.11.16
 python-dotenv==1.0.0
 asyncio-throttle==1.0.2
-yt_music_api==0.22.0
+ytmusicapi==1.4.1
 rapidfuzz==3.6.1
 beautifulsoup4==4.12.3
 # Для Railway добавьте в Dockerfile:
